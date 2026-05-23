@@ -5,29 +5,29 @@ type WebpageNodeProps = {
 };
 
 export function WebpageNode({ shape }: WebpageNodeProps) {
-  const { url, title, summary, screenshotUrl } = shape.props;
+  const { mode, url, title, summary } = shape.props;
 
   return (
     <article className="flex h-full w-full overflow-hidden rounded-xl border border-[#d6d2c4] bg-white shadow-[0_14px_35px_rgba(43,44,35,0.16)]">
       <div className="flex min-w-0 flex-1 flex-col">
-        <div className="flex h-[118px] items-center justify-center border-[#ece7d8] border-b bg-[#f7f3e8]">
-          <img
-            alt=""
-            className="h-full w-full object-cover"
-            draggable={false}
-            src={screenshotUrl}
-          />
+        <div className="h-[128px] overflow-hidden border-[#ece7d8] border-b bg-[#f7f3e8]">
+          <RenderModePreview shape={shape} />
         </div>
         <div className="flex min-h-0 flex-1 flex-col gap-2 p-4">
           <div>
-            <p className="truncate text-[11px] font-medium uppercase tracking-[0.12em] text-[#6f765f]">
-              {new URL(url).hostname.replace(/^www\./, "")}
-            </p>
+            <div className="flex items-center gap-2">
+              <p className="min-w-0 flex-1 truncate text-[11px] font-medium uppercase tracking-[0.12em] text-[#6f765f]">
+                {sourceLabel(url)}
+              </p>
+              <span className="rounded-full bg-[#edf0e5] px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.08em] text-[#59624c]">
+                {mode}
+              </span>
+            </div>
             <h2 className="mt-1 truncate text-base font-semibold text-[#202018]">
               {title}
             </h2>
           </div>
-          <p className="line-clamp-3 text-sm leading-5 text-[#5c5e52]">
+          <p className="line-clamp-2 text-sm leading-5 text-[#5c5e52]">
             {summary}
           </p>
           <a
@@ -43,4 +43,46 @@ export function WebpageNode({ shape }: WebpageNodeProps) {
       </div>
     </article>
   );
+}
+
+function RenderModePreview({ shape }: WebpageNodeProps) {
+  const { mode, screenshotUrl, url } = shape.props;
+
+  switch (mode) {
+    case "iframe":
+      return (
+        <iframe
+          className="h-full w-full bg-white"
+          sandbox="allow-same-origin allow-scripts allow-popups allow-forms"
+          src={url}
+          title={`${shape.props.title} live preview`}
+        />
+      );
+    case "archive":
+      return (
+        <iframe
+          className="h-full w-full bg-white"
+          sandbox="allow-same-origin"
+          src="/archive-demo.html"
+          title={`${shape.props.title} archived preview`}
+        />
+      );
+    case "screenshot":
+      return (
+        <img
+          alt=""
+          className="h-full w-full object-cover"
+          draggable={false}
+          src={screenshotUrl}
+        />
+      );
+  }
+}
+
+function sourceLabel(url: string) {
+  if (url.startsWith("/")) {
+    return "local archive";
+  }
+
+  return new URL(url).hostname.replace(/^www\./, "");
 }

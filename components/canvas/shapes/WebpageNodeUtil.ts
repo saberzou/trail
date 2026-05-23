@@ -1,3 +1,4 @@
+import { createElement } from "react";
 import {
   HTMLContainer,
   Rectangle2d,
@@ -53,14 +54,18 @@ export class WebpageNodeUtil extends ShapeUtil<WebpageNodeShape> {
   }
 
   override component(shape: WebpageNodeShape) {
-    return (
-      <HTMLContainer style={{ height: HEIGHT, width: WIDTH }}>
-        <WebpageNode shape={shape} />
-      </HTMLContainer>
-    );
+    return createElement(HTMLContainer, {
+      children: createElement(WebpageNode, { shape }),
+      style: { height: HEIGHT, width: WIDTH },
+    });
   }
 
   override indicator() {
-    return <rect height={HEIGHT} rx={12} ry={12} width={WIDTH} />;
+    return createElement("rect", {
+      height: HEIGHT,
+      rx: 12,
+      ry: 12,
+      width: WIDTH,
+    });
   }
 }
