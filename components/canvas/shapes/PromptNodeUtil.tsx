@@ -5,6 +5,7 @@ import {
   T,
   type TLBaseShape,
 } from "tldraw";
+import { killPromptShape, runPromptShape } from "@/lib/canvas/agentClient";
 import { PromptNodeBody, type PromptStatus } from "./PromptNode";
 
 export type PromptNodeShape = TLBaseShape<
@@ -40,25 +41,25 @@ export class PromptNodeUtil extends BaseBoxShapeUtil<PromptNodeShape> {
 
   override component(shape: PromptNodeShape) {
     const editor = this.editor;
+    const updateProps = (next: Partial<PromptNodeShape["props"]>) => {
+      editor.updateShape<PromptNodeShape>({
+        id: shape.id,
+        type: "prompt",
+        props: { ...shape.props, ...next },
+      });
+    };
+
     return (
       <HTMLContainer style={{ width: shape.props.w, height: shape.props.h }}>
         <PromptNodeBody
           prompt={shape.props.prompt}
           status={shape.props.status}
           error={shape.props.error}
-          onChange={(prompt) =>
-            editor.updateShape<PromptNodeShape>({
-              id: shape.id,
-              type: "prompt",
-              props: { ...shape.props, prompt },
-            })
-          }
+          onChange={(prompt) => updateProps({ prompt })}
           onRun={() => {
-            /* wired in Task 5 */
+            void runPromptShape(editor, shape.id);
           }}
-          onKill={() => {
-            /* wired in Task 5 */
-          }}
+          onKill={() => killPromptShape(editor, shape.id)}
         />
       </HTMLContainer>
     );
