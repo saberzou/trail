@@ -2,7 +2,7 @@
 
 A visual agent canvas for web tasks — drop URLs onto an infinite [tldraw](https://tldraw.dev) canvas, organize them spatially, and let an agent expand, archive, and annotate them.
 
-> Status: **Phase 0** — canvas + custom `WebpageNode` with three render modes (live iframe, screenshot, archived HTML). Agent loop, projects, and persistence land in Phase 1+.
+> Status: **Phase 0.5** — canvas + custom `WebpageNode` with three render modes, plus browser-only provider settings. Agent loop, projects, and persistence land in Phase 1+.
 
 ## Install (one-liner)
 
@@ -25,6 +25,17 @@ trail help
 ```
 
 Override the port with `TRAIL_PORT=4000 trail`.
+
+## Settings
+
+Open `/settings` from the gear icon on `/canvas` to save provider credentials for future agent runs.
+
+Supported providers:
+
+- AI: OpenAI, Anthropic, Google Gemini, DeepSeek, GitHub Copilot
+- Search: Brave Search, Tavily
+
+Keys stay in your browser. Trail encrypts the settings blob with AES-GCM using a non-extractable Web Crypto key stored in IndexedDB, and stores only ciphertext in IndexedDB. This protects against casual browser-profile disk inspection, but not against malicious JavaScript running on the Trail origin. The settings page includes a wipe-all control that deletes the local credential database.
 
 ## Develop
 

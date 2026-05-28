@@ -76,6 +76,21 @@ Next.js 15 (App Router) + tldraw v3 SDK for the canvas. Custom tldraw shapes (`W
 
 ---
 
+## Phase 0.5 — BYO Provider Settings
+
+**Status:** Complete.
+
+Trail now has a `/settings` page for client-side provider credentials. Settings are encrypted with AES-GCM using a non-extractable Web Crypto key in IndexedDB, and the encrypted settings blob is also stored in IndexedDB. Saved API keys are masked in the UI, users can wipe all credentials, configured providers can be selected as defaults, and `/canvas` links to settings with a gear icon.
+
+Supported providers:
+
+- AI: OpenAI, Anthropic, Google Gemini, DeepSeek, GitHub Copilot
+- Search: Brave Search, Tavily
+
+No provider is wired into the canvas or agent loop in this phase.
+
+---
+
 ## Phase 1 — Exploration MVP
 
 ### Task 1.1: SQLite + Drizzle schema for projects, nodes, edges
