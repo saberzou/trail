@@ -1,4 +1,4 @@
-import { openDB, type IDBPDatabase } from "idb";
+import { type IDBPDatabase, openDB } from "idb";
 
 const DB_NAME = "trail";
 const DB_VERSION = 1;

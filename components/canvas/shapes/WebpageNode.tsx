@@ -69,6 +69,7 @@ function RenderModePreview({ shape }: WebpageNodeProps) {
       );
     case "screenshot":
       return (
+        // biome-ignore lint/performance/noImgElement: tldraw shape previews use a plain image inside the canvas.
         <img
           alt=""
           className="h-full w-full object-cover"

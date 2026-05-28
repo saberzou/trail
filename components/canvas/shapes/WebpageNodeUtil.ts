@@ -54,10 +54,13 @@ export class WebpageNodeUtil extends ShapeUtil<WebpageNodeShape> {
   }
 
   override component(shape: WebpageNodeShape) {
-    return createElement(HTMLContainer, {
-      children: createElement(WebpageNode, { shape }),
-      style: { height: HEIGHT, width: WIDTH },
-    });
+    return createElement(
+      HTMLContainer,
+      {
+        style: { height: HEIGHT, width: WIDTH },
+      },
+      createElement(WebpageNode, { shape }),
+    );
   }
 
   override indicator() {

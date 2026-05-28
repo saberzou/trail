@@ -2,6 +2,7 @@ import "fake-indexeddb/auto";
 import { beforeEach, describe, expect, it } from "vitest";
 import { loadEncrypted, wipeEncrypted } from "./crypto-storage";
 import { hydrateSettings, useSettingsStore } from "./store";
+import type { TrailSettings } from "./types";
 
 describe("settings store", () => {
   beforeEach(async () => {
@@ -23,8 +24,8 @@ describe("settings store", () => {
     await useSettingsStore
       .getState()
       .setProvider("openai", { kind: "api-key", apiKey: "sk-test" });
-    const blob = await loadEncrypted<any>();
-    expect(blob.providers.openai.apiKey).toBe("sk-test");
+    const blob = await loadEncrypted<TrailSettings>();
+    expect(blob?.providers.openai?.apiKey).toBe("sk-test");
   });
 
   it("clearProvider removes the entry", async () => {
@@ -32,7 +33,9 @@ describe("settings store", () => {
     const s = useSettingsStore.getState();
     await s.setProvider("brave", { kind: "api-key", apiKey: "x" });
     await s.clearProvider("brave");
-    expect(useSettingsStore.getState().settings.providers.brave).toBeUndefined();
+    expect(
+      useSettingsStore.getState().settings.providers.brave,
+    ).toBeUndefined();
   });
 
   it("wipeAll empties everything", async () => {
