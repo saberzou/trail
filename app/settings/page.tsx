@@ -9,6 +9,7 @@ import { SectionHeader } from "./_components/SectionHeader";
 
 export default function SettingsPage() {
   const hydrated = useSettingsStore((state) => state.hydrated);
+  const wipeAll = useSettingsStore((state) => state.wipeAll);
 
   useEffect(() => {
     if (!hydrated && typeof indexedDB !== "undefined") {
@@ -30,6 +31,14 @@ export default function SettingsPage() {
             </p>
           </div>
         </header>
+
+        <aside className="rounded border border-amber-500/40 bg-amber-50/50 p-3 text-sm">
+          <strong>Where your keys live:</strong> Browser only. Encrypted with
+          AES-GCM using a non-extractable key in IndexedDB. This protects
+          against someone reading your browser profile on disk, but{" "}
+          <strong>not</strong> against malicious JavaScript running on this
+          page. Don't paste keys here on a machine or network you don't trust.
+        </aside>
 
         <section className="space-y-4">
           <SectionHeader
@@ -63,6 +72,25 @@ export default function SettingsPage() {
           />
           <DefaultsSection />
         </section>
+
+        <div>
+          <button
+            className="rounded border border-red-500 px-3 py-1 text-red-600 hover:bg-red-50"
+            onClick={async () => {
+              if (
+                !confirm(
+                  "Delete ALL stored credentials? This cannot be undone.",
+                )
+              ) {
+                return;
+              }
+              await wipeAll();
+            }}
+            type="button"
+          >
+            Wipe all credentials
+          </button>
+        </div>
       </div>
     </main>
   );

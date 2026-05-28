@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { testProvider } from "../../../lib/providers/test";
+import { maskKey } from "../../../lib/settings/mask";
 import { useSettingsStore } from "../../../lib/settings/store";
 import type { ApiKeyProvider, ProviderId } from "../../../lib/settings/types";
 
@@ -29,6 +30,13 @@ export function ApiKeyRow({
   const [baseUrl, setBaseUrl] = useState(saved?.baseUrl ?? "");
   const [status, setStatus] = useState<string | null>(null);
   const [testing, setTesting] = useState(false);
+
+  async function edit() {
+    await clearProvider(providerId);
+    setApiKey("");
+    setBaseUrl("");
+    setStatus(null);
+  }
 
   async function save() {
     await setProvider(providerId, {
@@ -68,13 +76,23 @@ export function ApiKeyRow({
           ) : null}
         </div>
         <div className="flex flex-wrap gap-2">
-          <button
-            className="rounded border border-[#c9c8bd] px-3 py-1 text-sm hover:bg-[#f0f0e8]"
-            onClick={save}
-            type="button"
-          >
-            Save {label}
-          </button>
+          {saved ? (
+            <button
+              className="rounded border border-[#c9c8bd] px-3 py-1 text-sm hover:bg-[#f0f0e8]"
+              onClick={edit}
+              type="button"
+            >
+              Edit
+            </button>
+          ) : (
+            <button
+              className="rounded border border-[#c9c8bd] px-3 py-1 text-sm hover:bg-[#f0f0e8]"
+              onClick={save}
+              type="button"
+            >
+              Save {label}
+            </button>
+          )}
           <button
             className="rounded border border-[#c9c8bd] px-3 py-1 text-sm hover:bg-[#f0f0e8]"
             disabled={testing}
@@ -84,27 +102,37 @@ export function ApiKeyRow({
             {testing ? "Testing..." : "Test connection"}
           </button>
           <button
+            aria-label={`Clear ${label}`}
             className="rounded border border-[#c9c8bd] px-3 py-1 text-sm hover:bg-[#f0f0e8]"
             onClick={clear}
             type="button"
           >
-            Clear {label}
+            {saved ? "Remove" : `Clear ${label}`}
           </button>
         </div>
       </div>
 
-      <label className="block text-[#3d4238] text-sm">
-        {label} API key
-        <input
-          className="mt-1 w-full rounded border border-[#c9c8bd] bg-white px-3 py-2 text-[#171814]"
-          onChange={(event) => setApiKey(event.target.value)}
-          placeholder={placeholder}
-          type="password"
-          value={apiKey}
-        />
-      </label>
+      {saved ? (
+        <div className="text-[#3d4238] text-sm">
+          {label} API key
+          <code className="mt-1 block rounded border border-[#c9c8bd] bg-[#fbfaf4] px-3 py-2 text-[#171814]">
+            {maskKey(saved.apiKey)}
+          </code>
+        </div>
+      ) : (
+        <label className="block text-[#3d4238] text-sm">
+          {label} API key
+          <input
+            className="mt-1 w-full rounded border border-[#c9c8bd] bg-white px-3 py-2 text-[#171814]"
+            onChange={(event) => setApiKey(event.target.value)}
+            placeholder={placeholder}
+            type="password"
+            value={apiKey}
+          />
+        </label>
+      )}
 
-      {baseUrlField ? (
+      {baseUrlField && !saved ? (
         <label className="block text-[#3d4238] text-sm">
           Base URL
           <input
