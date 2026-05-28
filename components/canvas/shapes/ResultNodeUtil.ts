@@ -1,12 +1,15 @@
 import { createElement } from "react";
 import {
   BaseBoxShapeUtil,
+  createShapeId,
   HTMLContainer,
   type RecordProps,
   T,
   type TLBaseShape,
 } from "tldraw";
 import { ResultNodeBody } from "@/components/canvas/shapes/ResultNode";
+import { runPromptShape } from "@/lib/canvas/agentClient";
+import type { PromptNodeShape } from "./PromptNodeUtil";
 
 export type ResultNodeSource = "search" | "fetch";
 
@@ -49,6 +52,7 @@ export class ResultNodeUtil extends BaseBoxShapeUtil<ResultNodeShape> {
   override isAspectRatioLocked = () => false;
 
   override component(shape: ResultNodeShape) {
+    const editor = this.editor;
     return createElement(
       HTMLContainer,
       { style: { width: shape.props.w, height: shape.props.h } },
@@ -58,7 +62,26 @@ export class ResultNodeUtil extends BaseBoxShapeUtil<ResultNodeShape> {
         summary: shape.props.summary,
         source: shape.props.source,
         onExploreSimilar: () => {
-          /* wired in Task 5 */
+          const seeded =
+            `Find pages similar to: "${shape.props.title}" (${shape.props.url}). ` +
+            "Surface different sources and different angles.";
+          const newId = createShapeId(`prompt-${crypto.randomUUID()}`);
+          editor.createShape<PromptNodeShape>({
+            id: newId,
+            type: "prompt",
+            x: shape.x + shape.props.w + 80,
+            y: shape.y + shape.props.h + 60,
+            props: {
+              w: 280,
+              h: 160,
+              prompt: seeded,
+              status: "idle",
+            },
+          });
+          // Auto-run after the shape is committed.
+          queueMicrotask(() => {
+            void runPromptShape(editor, newId);
+          });
         },
       }),
     );
