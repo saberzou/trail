@@ -1,21 +1,33 @@
-import { BaseBoxShapeUtil, HTMLContainer, type RecordProps, type TLBaseShape, T } from "tldraw";
+import {
+  BaseBoxShapeUtil,
+  HTMLContainer,
+  type RecordProps,
+  T,
+  type TLBaseShape,
+} from "tldraw";
 import { PromptNodeBody, type PromptStatus } from "./PromptNode";
 
-export type PromptNodeShape = TLBaseShape<"prompt", {
-  w: number;
-  h: number;
-  prompt: string;
-  status: PromptStatus;
-  error?: string;
-  runId?: string;
-}>;
+export type PromptNodeShape = TLBaseShape<
+  "prompt",
+  {
+    w: number;
+    h: number;
+    prompt: string;
+    status: PromptStatus;
+    error?: string;
+    runId?: string;
+  }
+>;
 
 export class PromptNodeUtil extends BaseBoxShapeUtil<PromptNodeShape> {
   static override type = "prompt" as const;
   static override props: RecordProps<PromptNodeShape> = {
-    w: T.number, h: T.number, prompt: T.string,
+    w: T.number,
+    h: T.number,
+    prompt: T.string,
     status: T.literalEnum("idle", "running", "done", "error"),
-    error: T.string.optional(), runId: T.string.optional(),
+    error: T.string.optional(),
+    runId: T.string.optional(),
   };
 
   override getDefaultProps(): PromptNodeShape["props"] {
@@ -34,9 +46,19 @@ export class PromptNodeUtil extends BaseBoxShapeUtil<PromptNodeShape> {
           prompt={shape.props.prompt}
           status={shape.props.status}
           error={shape.props.error}
-          onChange={(prompt) => editor.updateShape<PromptNodeShape>({ id: shape.id, type: "prompt", props: { ...shape.props, prompt } })}
-          onRun={() => { /* wired in Task 5 */ }}
-          onKill={() => { /* wired in Task 5 */ }}
+          onChange={(prompt) =>
+            editor.updateShape<PromptNodeShape>({
+              id: shape.id,
+              type: "prompt",
+              props: { ...shape.props, prompt },
+            })
+          }
+          onRun={() => {
+            /* wired in Task 5 */
+          }}
+          onKill={() => {
+            /* wired in Task 5 */
+          }}
         />
       </HTMLContainer>
     );

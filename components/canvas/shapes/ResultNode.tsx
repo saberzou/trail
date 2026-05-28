@@ -8,12 +8,20 @@ export interface ResultNodeBodyProps {
   onExploreSimilar: () => void;
 }
 
-export function ResultNodeBody({ title, url, summary, source, onExploreSimilar }: ResultNodeBodyProps) {
+export function ResultNodeBody({
+  title,
+  url,
+  summary,
+  source,
+  onExploreSimilar,
+}: ResultNodeBodyProps) {
   return (
     <div className="flex h-full w-full flex-col gap-2 rounded-md border border-[#c9c8bd] bg-white p-3 shadow-sm">
       <div className="flex items-start justify-between gap-2">
         <h3 className="text-sm font-medium text-[#273321]">{title}</h3>
-        <span className="rounded bg-[#e5e7eb] px-1.5 py-0.5 text-[10px] text-[#4b5563]">{source}</span>
+        <span className="rounded bg-[#e5e7eb] px-1.5 py-0.5 text-[10px] text-[#4b5563]">
+          {source}
+        </span>
       </div>
       <a
         href={url}
@@ -24,7 +32,9 @@ export function ResultNodeBody({ title, url, summary, source, onExploreSimilar }
       >
         {url}
       </a>
-      <p className="flex-1 overflow-y-auto text-xs leading-relaxed text-[#374151]">{summary}</p>
+      <p className="flex-1 overflow-y-auto text-xs leading-relaxed text-[#374151]">
+        {summary}
+      </p>
       <button
         type="button"
         onClick={onExploreSimilar}

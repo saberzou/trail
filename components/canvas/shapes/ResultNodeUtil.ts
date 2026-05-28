@@ -1,5 +1,11 @@
 import { createElement } from "react";
-import { BaseBoxShapeUtil, HTMLContainer, T, type RecordProps, type TLBaseShape } from "tldraw";
+import {
+  BaseBoxShapeUtil,
+  HTMLContainer,
+  type RecordProps,
+  T,
+  type TLBaseShape,
+} from "tldraw";
 import { ResultNodeBody } from "@/components/canvas/shapes/ResultNode";
 
 export type ResultNodeSource = "search" | "fetch";

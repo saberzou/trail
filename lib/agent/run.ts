@@ -2,13 +2,13 @@ import { createAnthropic } from "@ai-sdk/anthropic";
 import { createDeepSeek } from "@ai-sdk/deepseek";
 import { createGoogleGenerativeAI } from "@ai-sdk/google";
 import { createOpenAI } from "@ai-sdk/openai";
-import { generateText, type LanguageModelV2, stepCountIs, tool } from "ai";
+import { generateText, type LanguageModel, stepCountIs, tool } from "ai";
 import { nanoid } from "nanoid";
 import { z } from "zod";
 import { makeFetchUrlTool, makeWebSearchTool } from "./tools";
 import type { AgentEvent, AgentRunRequest } from "./types";
 
-function resolveModel(req: AgentRunRequest): LanguageModelV2 {
+function resolveModel(req: AgentRunRequest): LanguageModel {
   const model = req.model;
   switch (req.providerId) {
     case "openai":
@@ -58,7 +58,8 @@ export async function* runAgent(
     },
   });
 
-  const tools: Record<string, ReturnType<typeof tool>> = {
+  // biome-ignore lint/suspicious/noExplicitAny: AI SDK v6 ToolSet is invariant; mixing tool input shapes requires `any` here
+  const tools: Record<string, any> = {
     fetch_url: makeFetchUrlTool(),
     spawn_child_node: spawnChild,
   };
