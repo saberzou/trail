@@ -1,0 +1,144 @@
+#!/usr/bin/env bash
+# trail — launch the Trail visual agent canvas in your browser.
+#
+# Usage:
+#   trail              start dev server (if needed) and open /canvas
+#   trail stop         stop the dev server
+#   trail status       show running state + URL
+#   trail logs         tail the dev server log
+#   trail update       git pull + reinstall deps
+#   trail rebuild      kill, reinstall, restart
+#
+# State:
+#   PID  -> $HOME/.trail/server.pid
+#   LOG  -> $HOME/.trail/server.log
+
+set -euo pipefail
+
+# Resolve repo dir: explicit env var > script's parent (..) > ~/.local/share/trail > ~/code/trail
+_script_path="${BASH_SOURCE[0]:-$0}"
+while [[ -L "$_script_path" ]]; do _script_path="$(readlink "$_script_path")"; done
+_script_dir="$(cd "$(dirname "$_script_path")" && pwd)"
+_default_repo="$(cd "$_script_dir/.." && pwd)"
+REPO_DIR="${TRAIL_REPO:-$_default_repo}"
+[[ -d "$REPO_DIR/.git" ]] || REPO_DIR="$HOME/.local/share/trail"
+[[ -d "$REPO_DIR/.git" ]] || REPO_DIR="$HOME/code/trail"
+PORT="${TRAIL_PORT:-3000}"
+HOST="127.0.0.1"
+URL="http://${HOST}:${PORT}/canvas"
+STATE_DIR="$HOME/.trail"
+PID_FILE="$STATE_DIR/server.pid"
+LOG_FILE="$STATE_DIR/server.log"
+
+mkdir -p "$STATE_DIR"
+
+die() { printf "trail: %s\n" "$*" >&2; exit 1; }
+log() { printf "trail: %s\n" "$*"; }
+
+ensure_repo() {
+  [[ -d "$REPO_DIR/.git" ]] || die "repo not found at $REPO_DIR (set TRAIL_REPO to override)"
+}
+
+ensure_pnpm() {
+  command -v pnpm >/dev/null 2>&1 || die "pnpm not found in PATH"
+}
+
+needs_install() {
+  [[ ! -d "$REPO_DIR/node_modules" ]] && return 0
+  [[ "$REPO_DIR/pnpm-lock.yaml" -nt "$REPO_DIR/node_modules/.modules.yaml" ]] && return 0
+  return 1
+}
+
+install_if_needed() {
+  if needs_install; then
+    log "installing deps (pnpm install)..."
+    (cd "$REPO_DIR" && pnpm install --prefer-offline)
+  fi
+}
+
+is_running() {
+  [[ -f "$PID_FILE" ]] || return 1
+  local pid; pid=$(cat "$PID_FILE" 2>/dev/null || echo "")
+  [[ -n "$pid" ]] && kill -0 "$pid" 2>/dev/null
+}
+
+start_server() {
+  if is_running; then
+    log "already running (pid $(cat "$PID_FILE")) at $URL"
+    return 0
+  fi
+  log "starting dev server on :$PORT ..."
+  : > "$LOG_FILE"
+  ( cd "$REPO_DIR" && nohup pnpm dev --hostname "$HOST" --port "$PORT" \
+      >>"$LOG_FILE" 2>&1 & echo $! >"$PID_FILE" )
+
+  # wait up to 60s for "Ready"
+  local i=0
+  while (( i < 120 )); do
+    if grep -qE "Ready|started server|Local:" "$LOG_FILE" 2>/dev/null; then
+      log "ready at $URL"
+      return 0
+    fi
+    if ! is_running; then
+      tail -n 30 "$LOG_FILE" >&2 || true
+      die "server died during startup (see $LOG_FILE)"
+    fi
+    sleep 0.5
+    i=$((i+1))
+  done
+  log "server taking longer than expected — opening anyway (tail with: trail logs)"
+}
+
+stop_server() {
+  if ! is_running; then
+    log "not running"
+    rm -f "$PID_FILE"
+    return 0
+  fi
+  local pid; pid=$(cat "$PID_FILE")
+  log "stopping pid $pid ..."
+  # kill the whole process group so pnpm + next both die
+  kill -TERM "-$pid" 2>/dev/null || kill -TERM "$pid" 2>/dev/null || true
+  sleep 1
+  kill -KILL "$pid" 2>/dev/null || true
+  rm -f "$PID_FILE"
+}
+
+open_browser() { open "$URL" >/dev/null 2>&1 || true; }
+
+cmd="${1:-up}"
+case "$cmd" in
+  ""|up|start|open)
+    ensure_repo; ensure_pnpm
+    install_if_needed
+    start_server
+    open_browser
+    ;;
+  stop)        stop_server ;;
+  restart)     stop_server; ensure_repo; ensure_pnpm; install_if_needed; start_server; open_browser ;;
+  status)
+    if is_running; then
+      echo "running  pid=$(cat "$PID_FILE")  url=$URL  log=$LOG_FILE"
+    else
+      echo "stopped  url(when up)=$URL"
+    fi
+    ;;
+  logs)        tail -n 100 -f "$LOG_FILE" ;;
+  update)
+    ensure_repo
+    (cd "$REPO_DIR" && git pull --ff-only && pnpm install)
+    ;;
+  rebuild)
+    ensure_repo; ensure_pnpm
+    stop_server
+    rm -rf "$REPO_DIR/node_modules" "$REPO_DIR/.next"
+    (cd "$REPO_DIR" && pnpm install)
+    start_server; open_browser
+    ;;
+  -h|--help|help)
+    sed -n '2,15p' "$0" | sed 's/^# \{0,1\}//'
+    ;;
+  *)
+    die "unknown command: $cmd (try: trail help)"
+    ;;
+esac
