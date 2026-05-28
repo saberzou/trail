@@ -3,6 +3,7 @@
 import { useEffect } from "react";
 import { hydrateSettings, useSettingsStore } from "../../lib/settings/store";
 import { ApiKeyRow } from "./_components/ApiKeyRow";
+import { CopilotRow } from "./_components/CopilotRow";
 import { SectionHeader } from "./_components/SectionHeader";
 
 export default function SettingsPage() {
@@ -39,6 +40,7 @@ export default function SettingsPage() {
             <ApiKeyRow label="Anthropic" providerId="anthropic" />
             <ApiKeyRow label="Google Gemini" providerId="gemini" />
             <ApiKeyRow label="DeepSeek" providerId="deepseek" />
+            <CopilotRow />
           </div>
         </section>
 

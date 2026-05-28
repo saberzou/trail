@@ -1,4 +1,5 @@
 import type { ProviderConfig, ProviderId } from "../settings/types";
+import { COPILOT_EDITOR_VERSION, getCopilotToken } from "./copilot";
 
 export type TestResult = { ok: true } | { ok: false; error: string };
 
@@ -7,7 +8,28 @@ export async function testProvider(
   cfg: ProviderConfig,
 ): Promise<TestResult> {
   if (id === "copilot") {
-    return { ok: false, error: "Use Copilot device flow to authenticate" };
+    const cp = cfg as Extract<ProviderConfig, { kind: "copilot" }>;
+    if (!cp.githubAccessToken) {
+      return { ok: false, error: "Use Copilot device flow to authenticate" };
+    }
+    try {
+      const token = await getCopilotToken(
+        cp.githubAccessToken,
+        cp.copilotToken,
+      );
+      const res = await fetch("https://api.githubcopilot.com/models", {
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Editor-Version": COPILOT_EDITOR_VERSION,
+        },
+      });
+      return res.ok ? { ok: true } : { ok: false, error: `HTTP ${res.status}` };
+    } catch (error: unknown) {
+      return {
+        ok: false,
+        error: error instanceof Error ? error.message : "Network error",
+      };
+    }
   }
   const c = cfg as Extract<ProviderConfig, { kind: "api-key" }>;
   if (!c.apiKey?.trim()) {
