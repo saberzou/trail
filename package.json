@@ -19,7 +19,7 @@
   },
   "devDependencies": {
     "@biomejs/biome": "^2.3.8",
-    "@testing-library/jest-dom": "^6.9.2",
+    "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/react": "^16.3.0",
     "@tailwindcss/postcss": "^4",
     "@types/node": "^20",
