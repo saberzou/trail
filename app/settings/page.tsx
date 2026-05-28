@@ -4,6 +4,7 @@ import { useEffect } from "react";
 import { hydrateSettings, useSettingsStore } from "../../lib/settings/store";
 import { ApiKeyRow } from "./_components/ApiKeyRow";
 import { CopilotRow } from "./_components/CopilotRow";
+import { DefaultsSection } from "./_components/DefaultsSection";
 import { SectionHeader } from "./_components/SectionHeader";
 
 export default function SettingsPage() {
@@ -60,9 +61,7 @@ export default function SettingsPage() {
             description="Pick default providers after credentials are saved."
             title="Defaults"
           />
-          <div className="rounded border border-[#d9d8cc] bg-white p-4 text-[#5d6256] text-sm">
-            Defaults controls will appear here.
-          </div>
+          <DefaultsSection />
         </section>
       </div>
     </main>
