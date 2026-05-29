@@ -2,16 +2,18 @@
 # trail — launch the Trail visual agent canvas in your browser.
 #
 # Usage:
-#   trail              start dev server (if needed) and open /canvas
-#   trail stop         stop the dev server
-#   trail status       show running state + URL
-#   trail logs         tail the dev server log
-#   trail update       git pull + reinstall deps
-#   trail rebuild      kill, reinstall, restart
+#   trail                  start Next.js + renderer sidecar and open /canvas
+#   trail stop             stop both processes
+#   trail status           show running state + URLs for both processes
+#   trail logs             tail next.js + renderer logs (interleaved)
+#   trail install-renderer download Chromium for the Playwright sidecar
+#   trail update           git pull + reinstall deps
+#   trail rebuild          kill, reinstall, restart both
+#   trail restart          stop both, then start again
 #
 # State:
-#   PID  -> $HOME/.trail/server.pid
-#   LOG  -> $HOME/.trail/server.log
+#   PIDs -> $HOME/.trail/server.pid    $HOME/.trail/renderer.pid
+#   LOGs -> $HOME/.trail/server.log    $HOME/.trail/renderer.log
 
 set -euo pipefail
 
@@ -24,11 +26,15 @@ REPO_DIR="${TRAIL_REPO:-$_default_repo}"
 [[ -d "$REPO_DIR/.git" ]] || REPO_DIR="$HOME/.local/share/trail"
 [[ -d "$REPO_DIR/.git" ]] || REPO_DIR="$HOME/code/trail"
 PORT="${TRAIL_PORT:-3000}"
+RENDERER_PORT="${TRAIL_RENDERER_PORT:-3001}"
 HOST="127.0.0.1"
 URL="http://${HOST}:${PORT}/canvas"
+RENDERER_URL="http://${HOST}:${RENDERER_PORT}/health"
 STATE_DIR="$HOME/.trail"
 PID_FILE="$STATE_DIR/server.pid"
 LOG_FILE="$STATE_DIR/server.log"
+RENDERER_PID_FILE="$STATE_DIR/renderer.pid"
+RENDERER_LOG="$STATE_DIR/renderer.log"
 
 mkdir -p "$STATE_DIR"
 
@@ -62,7 +68,42 @@ is_running() {
   [[ -n "$pid" ]] && kill -0 "$pid" 2>/dev/null
 }
 
+is_renderer_running() {
+  [[ -f "$RENDERER_PID_FILE" ]] || return 1
+  local pid; pid=$(cat "$RENDERER_PID_FILE" 2>/dev/null || echo "")
+  [[ -n "$pid" ]] && kill -0 "$pid" 2>/dev/null
+}
+
+start_renderer() {
+  if is_renderer_running; then
+    log "renderer already running (pid $(cat "$RENDERER_PID_FILE"))"
+    return 0
+  fi
+  log "starting renderer sidecar on :$RENDERER_PORT ..."
+  : > "$RENDERER_LOG"
+  ( cd "$REPO_DIR" && TRAIL_RENDERER_PORT="$RENDERER_PORT" TRAIL_APP_PORT="$PORT" \
+      nohup node "$REPO_DIR/scripts/trail-renderer.mjs" \
+      >>"$RENDERER_LOG" 2>&1 & echo $! >"$RENDERER_PID_FILE" )
+
+  # Wait up to 10s for /health to return 200.
+  local i=0
+  while (( i < 20 )); do
+    if curl -fsS --max-time 1 "$RENDERER_URL" >/dev/null 2>&1; then
+      log "renderer ready at http://${HOST}:${RENDERER_PORT}"
+      return 0
+    fi
+    if ! is_renderer_running; then
+      break
+    fi
+    sleep 0.5
+    i=$((i+1))
+  done
+  log "renderer didn't come up — did you run \`trail install-renderer\`? Continuing without screenshots; see $RENDERER_LOG."
+  return 0
+}
+
 start_server() {
+  start_renderer
   if is_running; then
     log "already running (pid $(cat "$PID_FILE")) at $URL"
     return 0
@@ -87,6 +128,19 @@ start_server() {
     i=$((i+1))
   done
   log "server taking longer than expected — opening anyway (tail with: trail logs)"
+}
+
+stop_renderer() {
+  if ! is_renderer_running; then
+    rm -f "$RENDERER_PID_FILE"
+    return 0
+  fi
+  local pid; pid=$(cat "$RENDERER_PID_FILE")
+  log "stopping renderer pid $pid ..."
+  kill -TERM "-$pid" 2>/dev/null || kill -TERM "$pid" 2>/dev/null || true
+  sleep 1
+  kill -KILL "$pid" 2>/dev/null || true
+  rm -f "$RENDERER_PID_FILE"
 }
 
 stop_server() {
@@ -114,29 +168,52 @@ case "$cmd" in
     start_server
     open_browser
     ;;
-  stop)        stop_server ;;
-  restart)     stop_server; ensure_repo; ensure_pnpm; install_if_needed; start_server; open_browser ;;
+  stop)
+    # renderer first so chromium gets a clean shutdown before next.js exits
+    stop_renderer
+    stop_server
+    ;;
+  restart)
+    stop_renderer; stop_server
+    ensure_repo; ensure_pnpm; install_if_needed
+    start_server; open_browser
+    ;;
   status)
     if is_running; then
-      echo "running  pid=$(cat "$PID_FILE")  url=$URL  log=$LOG_FILE"
+      echo "next.js   running  pid=$(cat "$PID_FILE")  url=$URL  log=$LOG_FILE"
     else
-      echo "stopped  url(when up)=$URL"
+      echo "next.js   stopped  url(when up)=$URL"
+    fi
+    if is_renderer_running; then
+      echo "renderer  running  pid=$(cat "$RENDERER_PID_FILE")  url=http://${HOST}:${RENDERER_PORT}/health  log=$RENDERER_LOG"
+    else
+      echo "renderer  stopped  url(when up)=http://${HOST}:${RENDERER_PORT}/health"
     fi
     ;;
-  logs)        tail -n 100 -f "$LOG_FILE" ;;
+  logs)
+    # Tail both logs so the user sees next.js + renderer output together.
+    # `tail -f` accepts multiple files and prefixes with `==> file <==`.
+    tail -n 100 -f "$LOG_FILE" "$RENDERER_LOG"
+    ;;
+  install-renderer)
+    ensure_repo; ensure_pnpm
+    log "installing Chromium for Playwright (this may take a minute)..."
+    (cd "$REPO_DIR" && pnpm exec playwright install chromium)
+    log "renderer ready. start it with: trail"
+    ;;
   update)
     ensure_repo
     (cd "$REPO_DIR" && git pull --ff-only && pnpm install)
     ;;
   rebuild)
     ensure_repo; ensure_pnpm
-    stop_server
+    stop_renderer; stop_server
     rm -rf "$REPO_DIR/node_modules" "$REPO_DIR/.next"
     (cd "$REPO_DIR" && pnpm install)
     start_server; open_browser
     ;;
   -h|--help|help)
-    sed -n '2,15p' "$0" | sed 's/^# \{0,1\}//'
+    sed -n '2,19p' "$0" | sed 's/^# \{0,1\}//'
     ;;
   *)
     die "unknown command: $cmd (try: trail help)"
