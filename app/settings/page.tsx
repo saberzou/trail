@@ -40,57 +40,69 @@ export default function SettingsPage() {
           page. Don't paste keys here on a machine or network you don't trust.
         </aside>
 
-        <section className="space-y-4">
-          <SectionHeader
-            description="Connect LLM providers for future Trail agent runs."
-            title="AI Providers"
-          />
-          <div className="space-y-3">
-            <ApiKeyRow baseUrlField label="OpenAI" providerId="openai" />
-            <ApiKeyRow label="Anthropic" providerId="anthropic" />
-            <ApiKeyRow label="Google Gemini" providerId="gemini" />
-            <ApiKeyRow label="DeepSeek" providerId="deepseek" />
-            <CopilotRow />
-          </div>
-        </section>
+        {hydrated ? (
+          <>
+            <section className="space-y-4">
+              <SectionHeader
+                description="Connect LLM providers for future Trail agent runs."
+                title="AI Providers"
+              />
+              <div className="space-y-3">
+                <ApiKeyRow baseUrlField label="OpenAI" providerId="openai" />
+                <ApiKeyRow label="Anthropic" providerId="anthropic" />
+                <ApiKeyRow label="Google Gemini" providerId="gemini" />
+                <ApiKeyRow label="DeepSeek" providerId="deepseek" />
+                <CopilotRow />
+              </div>
+            </section>
 
-        <section className="space-y-4">
-          <SectionHeader
-            description="Connect search providers for future web research."
-            title="Search Providers"
-          />
-          <div className="space-y-3">
-            <ApiKeyRow label="Brave Search" providerId="brave" />
-            <ApiKeyRow label="Tavily" providerId="tavily" />
-          </div>
-        </section>
+            <section className="space-y-4">
+              <SectionHeader
+                description="Connect search providers for future web research."
+                title="Search Providers"
+              />
+              <div className="space-y-3">
+                <ApiKeyRow label="Brave Search" providerId="brave" />
+                <ApiKeyRow label="Tavily" providerId="tavily" />
+              </div>
+            </section>
 
-        <section className="space-y-4">
-          <SectionHeader
-            description="Pick default providers after credentials are saved."
-            title="Defaults"
-          />
-          <DefaultsSection />
-        </section>
+            <section className="space-y-4">
+              <SectionHeader
+                description="Pick default providers after credentials are saved."
+                title="Defaults"
+              />
+              <DefaultsSection />
+            </section>
 
-        <div>
-          <button
-            className="rounded border border-red-500 px-3 py-1 text-red-600 hover:bg-red-50"
-            onClick={async () => {
-              if (
-                !confirm(
-                  "Delete ALL stored credentials? This cannot be undone.",
-                )
-              ) {
-                return;
-              }
-              await wipeAll();
-            }}
-            type="button"
+            <div>
+              <button
+                className="rounded border border-red-500 px-3 py-1 text-red-600 hover:bg-red-50"
+                onClick={async () => {
+                  if (
+                    !confirm(
+                      "Delete ALL stored credentials? This cannot be undone.",
+                    )
+                  ) {
+                    return;
+                  }
+                  await wipeAll();
+                }}
+                type="button"
+              >
+                Wipe all credentials
+              </button>
+            </div>
+          </>
+        ) : (
+          <div
+            aria-live="polite"
+            className="rounded border border-[#d9d8cc] bg-white p-6 text-[#5d6256] text-sm"
+            role="status"
           >
-            Wipe all credentials
-          </button>
-        </div>
+            Loading saved credentials…
+          </div>
+        )}
       </div>
     </main>
   );

@@ -25,7 +25,11 @@ describe("settings store", () => {
       .getState()
       .setProvider("openai", { kind: "api-key", apiKey: "sk-test" });
     const blob = await loadEncrypted<TrailSettings>();
-    expect(blob?.providers.openai?.apiKey).toBe("sk-test");
+    const openai = blob?.providers.openai;
+    expect(openai?.kind).toBe("api-key");
+    if (openai?.kind === "api-key") {
+      expect(openai.apiKey).toBe("sk-test");
+    }
   });
 
   it("clearProvider removes the entry", async () => {

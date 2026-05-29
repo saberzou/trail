@@ -1,4 +1,6 @@
-import { type IDBPDatabase, openDB } from "idb";
+import { createHash } from "node:crypto";
+import type { IDBPDatabase } from "idb";
+import { openTrailDb } from "@/lib/idb/open";
 
 const DB_NAME = "trail-canvas";
 const DB_VERSION = 1;
@@ -9,19 +11,37 @@ const KEY = "main";
 export type CanvasSnapshot = unknown;
 
 async function db(): Promise<IDBPDatabase> {
-  return openDB(DB_NAME, DB_VERSION, {
-    upgrade(d) {
-      if (!d.objectStoreNames.contains(STORE)) {
-        d.createObjectStore(STORE);
-      }
-    },
-  });
+  return openTrailDb(DB_NAME, STORE, DB_VERSION);
+}
+
+// Hash of the last snapshot we actually wrote, so we can skip no-op writes
+// triggered by tldraw's listen() firing for incidental store mutations.
+let lastHash: string | null = null;
+
+function hashSnapshot(snapshot: CanvasSnapshot): string {
+  return createHash("sha1").update(JSON.stringify(snapshot)).digest("hex");
+}
+
+/**
+ * Pure predicate for the snapshot-dedup logic, exported so callers (and tests)
+ * can reason about it without touching IDB.
+ */
+export function shouldSkipWrite(
+  prevHash: string | null,
+  nextHash: string,
+): boolean {
+  return prevHash !== null && prevHash === nextHash;
 }
 
 export async function saveSnapshot(snapshot: CanvasSnapshot): Promise<void> {
+  const hash = hashSnapshot(snapshot);
+  if (shouldSkipWrite(lastHash, hash)) {
+    return;
+  }
   const d = await db();
   try {
     await d.put(STORE, snapshot, KEY);
+    lastHash = hash;
   } finally {
     d.close();
   }
@@ -38,6 +58,7 @@ export async function loadSnapshot(): Promise<CanvasSnapshot | null> {
 }
 
 export async function wipeSnapshot(): Promise<void> {
+  lastHash = null;
   await new Promise<void>((resolve, reject) => {
     const req = indexedDB.deleteDatabase(DB_NAME);
     req.onsuccess = () => resolve();

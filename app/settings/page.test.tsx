@@ -45,4 +45,33 @@ describe("SettingsPage", () => {
     expect(screen.queryByDisplayValue("sk-supersecret-xxxx")).toBeNull();
     expect(screen.getByText("sk-…xxxx")).toBeInTheDocument();
   });
+
+  it("renders a skeleton before hydration and does not mount key inputs", () => {
+    useSettingsStore.setState({
+      hydrated: false,
+      settings: { version: 1, providers: {} },
+    });
+    render(React.createElement(SettingsPage));
+
+    // Skeleton placeholder is visible.
+    expect(screen.getByText(/Loading saved credentials/i)).toBeInTheDocument();
+    // The provider section headings (and therefore ApiKeyRow inputs) must
+    // not render yet, so a pre-hydration empty value can't be saved into
+    // the row's local state.
+    expect(screen.queryByRole("heading", { name: /AI Providers/i })).toBeNull();
+    expect(screen.queryByLabelText(/OpenAI API key/i)).toBeNull();
+  });
+
+  it("renders masked existing key after hydration without showing a raw input", async () => {
+    await useSettingsStore.getState().setProvider("anthropic", {
+      apiKey: "sk-ant-1234567890",
+      kind: "api-key",
+    });
+
+    render(React.createElement(SettingsPage));
+
+    // Masked display present, no input value carrying the secret.
+    expect(screen.getByText("sk-…7890")).toBeInTheDocument();
+    expect(screen.queryByDisplayValue("sk-ant-1234567890")).toBeNull();
+  });
 });
