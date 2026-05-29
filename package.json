@@ -10,6 +10,7 @@
     "dev": "next dev --turbopack",
     "build": "next build",
     "start": "next start",
+    "renderer": "node scripts/trail-renderer.mjs",
     "lint": "biome check .",
     "format": "biome format --write .",
     "test": "vitest"
@@ -25,6 +26,7 @@
     "idb": "^8.0.3",
     "nanoid": "^5.1.11",
     "next": "15.5.18",
+    "playwright": "^1.49.0",
     "react": "19.2.6",
     "react-dom": "19.2.6",
     "tldraw": "3.15.0",

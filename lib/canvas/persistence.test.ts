@@ -2,7 +2,6 @@ import "fake-indexeddb/auto";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import * as openModule from "@/lib/idb/open";
 import {
-  createDebouncedSaver,
   loadSnapshot,
   saveSnapshot,
   seedLastHash,
@@ -32,32 +31,6 @@ describe("canvas persistence", () => {
     await saveSnapshot({ a: 1 });
     await saveSnapshot({ a: 2 });
     expect(await loadSnapshot()).toEqual({ a: 2 });
-  });
-
-  it("debounces multiple triggers into a single save", async () => {
-    let counter = 0;
-    const saver = createDebouncedSaver(() => ({ n: ++counter }), 20);
-    saver.trigger();
-    saver.trigger();
-    saver.trigger();
-    await new Promise((r) => setTimeout(r, 60));
-    expect(counter).toBe(1);
-    expect(await loadSnapshot()).toEqual({ n: 1 });
-  });
-
-  it("flush persists pending snapshot immediately", async () => {
-    const saver = createDebouncedSaver(() => ({ flushed: true }), 5000);
-    saver.trigger();
-    await saver.flush();
-    expect(await loadSnapshot()).toEqual({ flushed: true });
-  });
-
-  it("cancel discards pending snapshot", async () => {
-    const saver = createDebouncedSaver(() => ({ canceled: true }), 50);
-    saver.trigger();
-    saver.cancel();
-    await new Promise((r) => setTimeout(r, 100));
-    expect(await loadSnapshot()).toBeNull();
   });
 
   it("dedups identical snapshots end-to-end (counts real put() calls)", async () => {

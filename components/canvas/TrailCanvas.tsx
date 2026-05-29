@@ -7,10 +7,11 @@ import { WebpageNodeUtil } from "@/components/canvas/shapes/WebpageNodeUtil";
 import { setCanvasEditor } from "@/lib/canvas/editorRef";
 import {
   type CanvasSnapshot,
-  createDebouncedSaver,
   loadSnapshot,
+  saveSnapshot,
   seedLastHash,
 } from "@/lib/canvas/persistence";
+import { createDebouncedSaver } from "@/lib/idb/saver";
 
 export function TrailCanvas() {
   // Gate the <Tldraw> mount until we've checked IndexedDB so we don't race the
@@ -37,11 +38,11 @@ export function TrailCanvas() {
   }, []);
 
   if (!initial) {
-    return <main className="fixed inset-0 bg-[#f4f1e8]" />;
+    return <div className="absolute inset-0 bg-[#f4f1e8]" />;
   }
 
   return (
-    <main className="fixed inset-0 bg-[#f4f1e8]">
+    <div className="absolute inset-0 bg-[#f4f1e8]">
       <Tldraw
         shapeUtils={[WebpageNodeUtil]}
         onMount={(editor: Editor) => {
@@ -73,6 +74,7 @@ export function TrailCanvas() {
 
           const saver = createDebouncedSaver(
             () => editor.store.getStoreSnapshot(),
+            saveSnapshot,
             400,
           );
           // Listen to document-scope changes from any source (user *and*
@@ -92,6 +94,6 @@ export function TrailCanvas() {
           };
         }}
       />
-    </main>
+    </div>
   );
 }

@@ -1,41 +1,80 @@
 # Trail
 
-A visual agent canvas for web tasks — drop URLs onto an infinite [tldraw](https://tldraw.dev) canvas, organize them spatially, and let an agent expand, archive, and annotate them.
+A spatial canvas for the web, driven by an AI agent. Talk to one master
+agent in a left chat dock; the main canvas fills with webpage tiles —
+live iframes, Playwright screenshots, or rich link cards — laid out as
+task flows or exploration clusters.
 
-> Status: **Phase 1** — canvas + custom shapes, browser-only provider settings, an agent loop that turns a typed prompt into a small set of result cards backed by web search + URL fetch, and a persisted canvas graph that survives reloads.
+> Status: **v2 / PR2a** — Playwright sidecar, three-mode `WebpageNode`,
+> chat dock with URL-paste → tile. Free-form chat lands in PR2b. See
+> [`PLAN.md`](./PLAN.md) for the roadmap.
 
-## Install (one-liner)
+## Install
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/saberzou/trail/main/install.sh | bash
 ```
 
-This clones to `~/.local/share/trail`, installs deps, and puts `trail` on your PATH at `~/.local/bin/trail`. macOS + Linux. Requires `git`, Node.js, and `pnpm` (installer will set up `pnpm` via corepack if missing).
+This clones to `~/.local/share/trail`, installs deps, and puts `trail`
+on your PATH at `~/.local/bin/trail`. Requires `git`, Node ≥ 22.19,
+and `pnpm` (installer can set up pnpm via corepack if missing). macOS
+and Linux.
 
-## Usage
+After the first install, download Chromium for the screenshot sidecar:
 
 ```bash
-trail              # start the dev server and open /canvas in your browser
-trail status       # is it running? where?
-trail stop         # shut it down
-trail logs         # tail server log
-trail update       # git pull + reinstall
-trail rebuild      # nuke node_modules + .next, fresh install
+trail install-renderer
+```
+
+Then start everything:
+
+```bash
+trail              # starts Next.js + renderer, opens /canvas in your browser
+trail status       # show both PIDs and URLs
+trail logs         # tail next.js + renderer logs (interleaved)
+trail stop         # shut both down
+trail restart      # stop + start
+trail update       # git pull + reinstall deps
+trail rebuild      # nuke node_modules + .next, reinstall, restart
 trail help
 ```
 
-Override the port with `TRAIL_PORT=4000 trail`.
+Override the ports with `TRAIL_PORT=4000 trail` and
+`TRAIL_RENDERER_PORT=4001 trail`.
+
+## Usage today
+
+- Open the left chat dock at `/canvas`.
+- **Paste a URL** (just the URL, by itself) and hit Send → it appears
+  as a tile on the canvas. The renderer probes whether the page allows
+  iframes; if yes it embeds live, if no it shows a Playwright
+  screenshot, and if both fail it falls back to a link card.
+- Drag, resize, zoom the canvas with tldraw's usual controls. The
+  graph persists to IndexedDB and survives reload.
+- Free-form chat with the master agent (search-grounded summaries,
+  task flow generation, "find similar" expansion) lands in **PR2b**.
+  Today, anything that isn't a bare URL gets a placeholder reply.
 
 ## Settings
 
-Open `/settings` from the gear icon on `/canvas` to save provider credentials for future agent runs.
-
-Supported providers:
+Open `/settings` from the gear icon on `/canvas` to save provider
+credentials.
 
 - AI: OpenAI, Anthropic, Google Gemini, DeepSeek, GitHub Copilot
 - Search: Brave Search, Tavily
 
-Keys stay in your browser. Trail encrypts the settings blob with AES-GCM using a non-extractable Web Crypto key stored in IndexedDB, and stores only ciphertext in IndexedDB. This protects against casual browser-profile disk inspection, but not against malicious JavaScript running on the Trail origin. The settings page includes a wipe-all control that deletes the local credential database.
+Keys stay in your browser. Trail encrypts the settings blob with
+AES-GCM under a non-extractable Web Crypto key stored in IndexedDB
+and stores only the ciphertext. **This protects against casual
+disk-level inspection, not against malicious JavaScript running on the
+Trail origin** — anything that can run in your browser tab can ask
+the Crypto API to decrypt. `/settings` has a "wipe everything" button
+that deletes the local credential database.
+
+The Playwright sidecar at `127.0.0.1:3001` is loopback-only with CORS
+restricted to the Trail app's origin. There's no auth header beyond
+that — any process on the same machine can reach it, same as your
+`$HOME` directory.
 
 ## Develop
 
@@ -43,30 +82,17 @@ Keys stay in your browser. Trail encrypts the settings blob with AES-GCM using a
 git clone https://github.com/saberzou/trail.git
 cd trail
 pnpm install
-pnpm dev
+pnpm exec playwright install chromium
+pnpm renderer &      # start the sidecar on :3001
+pnpm dev             # start Next.js on :3000
 # open http://127.0.0.1:3000/canvas
 ```
 
-## Phase 1: prompt → search → fetch
-
-Drop a **PromptNode** on the canvas (the seed one appears on first load), type a question, hit **Run**. The node calls `/api/agent/run`, which streams an [AI SDK](https://sdk.vercel.ai) tool loop wired to two tools:
-
-- `web_search` — Brave Search or Tavily, whichever is configured.
-- `fetch_url` — fetches a page, runs [@mozilla/readability](https://github.com/mozilla/readability) over the DOM, returns the extracted article text.
-
-The agent's chosen sources materialize as **ResultNode** children below the prompt. From there you can **Explore similar** to spawn a follow-up PromptNode pre-seeded with the source's context, which auto-runs.
-
-The entire graph (prompts, results, positions, edits) is persisted to IndexedDB (`trail-canvas` DB) with a 400ms debounce. Reload the page and the canvas comes back exactly as you left it. Wipe via browser devtools → Application → IndexedDB if you want a clean slate.
-
-### Required keys
-
-Configure in `/settings`:
-
-- **One LLM provider** (required): OpenAI, Anthropic, Google Gemini, DeepSeek, or GitHub Copilot.
-- **One web search provider** (required for Phase 1): Brave Search or Tavily.
-
-Keys are encrypted with AES-GCM under a non-extractable Web Crypto key and stored in IndexedDB; nothing ships to a server other than the live request the agent makes when you click Run.
+Run tests with `pnpm test`, lint with `pnpm lint`, build with
+`pnpm build`.
 
 ## Roadmap
 
-See [`PLAN.md`](./PLAN.md).
+See [`PLAN.md`](./PLAN.md) for the master plan: PR2b adds the
+agent session and `build_flow` tool, PR2c adds the task / explore
+layouts and step state.
