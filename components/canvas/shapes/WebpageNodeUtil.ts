@@ -8,7 +8,7 @@ import {
 } from "tldraw";
 import { WebpageNode } from "@/components/canvas/shapes/WebpageNode";
 
-export type WebpageNodeMode = "iframe" | "screenshot" | "archive";
+export type WebpageNodeMode = "iframe" | "screenshot";
 
 export type WebpageNodeShape = TLBaseShape<
   "webpage",
@@ -32,7 +32,7 @@ export class WebpageNodeUtil extends ShapeUtil<WebpageNodeShape> {
     title: T.string,
     summary: T.string,
     screenshotUrl: T.string,
-    mode: T.literalEnum("iframe", "screenshot", "archive"),
+    mode: T.literalEnum("iframe", "screenshot"),
   };
 
   override getDefaultProps(): WebpageNodeShape["props"] {

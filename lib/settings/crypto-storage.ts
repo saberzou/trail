@@ -56,8 +56,12 @@ export async function saveEncrypted(obj: unknown): Promise<void> {
 
 export async function loadEncrypted<T = unknown>(): Promise<T | null> {
   const d = await db();
-  const row = (await d.get(BLOB_STORE, BLOB_ID)) as Stored | undefined;
-  d.close();
+  let row: Stored | undefined;
+  try {
+    row = (await d.get(BLOB_STORE, BLOB_ID)) as Stored | undefined;
+  } finally {
+    d.close();
+  }
   if (!row) {
     return null;
   }
@@ -69,7 +73,8 @@ export async function loadEncrypted<T = unknown>(): Promise<T | null> {
       row.ciphertext,
     );
     return JSON.parse(new TextDecoder().decode(plaintext)) as T;
-  } catch {
+  } catch (err) {
+    console.warn("[trail] settings decrypt failed", err);
     return null;
   }
 }

@@ -7,7 +7,13 @@ const CSP = [
   "frame-src 'self' https:",
   "style-src 'self' 'unsafe-inline'",
   "script-src 'self' 'unsafe-inline' 'unsafe-eval'",
+  // tldraw uses web workers; the worker-src fallback to script-src is
+  // browser-dependent, so spell it out.
+  "worker-src 'self' blob:",
   "font-src 'self' data:",
+  "frame-ancestors 'none'",
+  "base-uri 'self'",
+  "form-action 'self'",
 ].join("; ");
 
 const nextConfig: NextConfig = {

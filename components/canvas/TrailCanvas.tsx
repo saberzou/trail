@@ -9,6 +9,7 @@ import {
   type CanvasSnapshot,
   createDebouncedSaver,
   loadSnapshot,
+  seedLastHash,
 } from "@/lib/canvas/persistence";
 
 export function TrailCanvas() {
@@ -62,6 +63,9 @@ export function TrailCanvas() {
                   typeof editor.store.loadStoreSnapshot
                 >[0],
               );
+              // Seed the dedup hash so the very first listen() tick after
+              // hydrate doesn't pointlessly re-serialize the same snapshot.
+              seedLastHash(snapshot);
             } catch (err) {
               console.error("[trail] failed to load canvas snapshot", err);
             }

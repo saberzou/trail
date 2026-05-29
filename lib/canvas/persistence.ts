@@ -1,4 +1,3 @@
-import { createHash } from "node:crypto";
 import type { IDBPDatabase } from "idb";
 import { openTrailDb } from "@/lib/idb/open";
 
@@ -18,8 +17,31 @@ async function db(): Promise<IDBPDatabase> {
 // triggered by tldraw's listen() firing for incidental store mutations.
 let lastHash: string | null = null;
 
+/**
+ * FNV-1a 32-bit hash over a string. Not cryptographic — we only need a fast
+ * same-vs-different fingerprint of the JSON-serialized snapshot, and avoiding
+ * `node:crypto` lets this module work inside the client bundle.
+ */
+function fnv1a(s: string): string {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < s.length; i++) {
+    h ^= s.charCodeAt(i);
+    h = Math.imul(h, 0x01000193);
+  }
+  return (h >>> 0).toString(16);
+}
+
 function hashSnapshot(snapshot: CanvasSnapshot): string {
-  return createHash("sha1").update(JSON.stringify(snapshot)).digest("hex");
+  return fnv1a(JSON.stringify(snapshot));
+}
+
+/**
+ * Seed the dedup hash from a snapshot we just loaded from disk. Without this,
+ * the first trigger after `loadStoreSnapshot()` writes the same bytes back to
+ * IDB because `lastHash` is still null.
+ */
+export function seedLastHash(snapshot: CanvasSnapshot): void {
+  lastHash = hashSnapshot(snapshot);
 }
 
 /**
