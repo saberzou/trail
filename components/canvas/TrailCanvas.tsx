@@ -1,10 +1,8 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { createShapeId, type Editor, Tldraw } from "tldraw";
+import { type Editor, Tldraw } from "tldraw";
 import "tldraw/tldraw.css";
-import { PromptNodeUtil } from "@/components/canvas/shapes/PromptNodeUtil";
-import { ResultNodeUtil } from "@/components/canvas/shapes/ResultNodeUtil";
 import { WebpageNodeUtil } from "@/components/canvas/shapes/WebpageNodeUtil";
 import { setCanvasEditor } from "@/lib/canvas/editorRef";
 import {
@@ -13,11 +11,9 @@ import {
   loadSnapshot,
 } from "@/lib/canvas/persistence";
 
-const SEED_PROMPT_ID = createShapeId("trail-prompt-seed");
-
 export function TrailCanvas() {
-  // Gate the <Tldraw> mount until we've checked IndexedDB. This keeps us from
-  // seeding a new PromptNode and racing the snapshot load.
+  // Gate the <Tldraw> mount until we've checked IndexedDB so we don't race the
+  // hydrate against any programmatic shape creation.
   const [initial, setInitial] = useState<{
     snapshot: CanvasSnapshot | null;
   } | null>(null);
@@ -46,7 +42,7 @@ export function TrailCanvas() {
   return (
     <main className="fixed inset-0 bg-[#f4f1e8]">
       <Tldraw
-        shapeUtils={[PromptNodeUtil, ResultNodeUtil, WebpageNodeUtil]}
+        shapeUtils={[WebpageNodeUtil]}
         onMount={(editor: Editor) => {
           setCanvasEditor(editor);
 
@@ -69,27 +65,20 @@ export function TrailCanvas() {
             } catch (err) {
               console.error("[trail] failed to load canvas snapshot", err);
             }
-          } else if (!editor.getShape(SEED_PROMPT_ID)) {
-            editor.createShape({
-              id: SEED_PROMPT_ID,
-              type: "prompt",
-              x: 200,
-              y: 200,
-              props: { w: 280, h: 160, prompt: "", status: "idle" },
-            });
-            editor.select(SEED_PROMPT_ID);
-            editor.zoomToSelection({ animation: { duration: 240 } });
           }
 
           const saver = createDebouncedSaver(
             () => editor.store.getStoreSnapshot(),
             400,
           );
+          // Listen to document-scope changes from any source (user *and*
+          // programmatic) so agent-authored shapes persist. We intentionally
+          // skip the `source: "user"` filter that was here before.
           const unlisten = editor.store.listen(
             () => {
               saver.trigger();
             },
-            { source: "user", scope: "document" },
+            { scope: "document" },
           );
 
           return () => {

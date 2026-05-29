@@ -16,11 +16,7 @@ describe("copilot proxy routes", () => {
       );
     vi.stubGlobal("fetch", fetchMock);
 
-    const res = await deviceCode(
-      new Request("http://localhost/api/copilot/device-code", {
-        method: "POST",
-      }),
-    );
+    const res = await deviceCode();
 
     expect(await res.json()).toEqual({
       device_code: "dev",

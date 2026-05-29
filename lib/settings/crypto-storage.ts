@@ -1,4 +1,5 @@
-import { type IDBPDatabase, openDB } from "idb";
+import type { IDBPDatabase } from "idb";
+import { openTrailDb } from "@/lib/idb/open";
 
 const DB_NAME = "trail";
 const DB_VERSION = 1;
@@ -10,16 +11,7 @@ const BLOB_ID = "settings";
 type Stored = { iv: ArrayBuffer; ciphertext: ArrayBuffer };
 
 async function db(): Promise<IDBPDatabase> {
-  return openDB(DB_NAME, DB_VERSION, {
-    upgrade(d) {
-      if (!d.objectStoreNames.contains(KEY_STORE)) {
-        d.createObjectStore(KEY_STORE);
-      }
-      if (!d.objectStoreNames.contains(BLOB_STORE)) {
-        d.createObjectStore(BLOB_STORE);
-      }
-    },
-  });
+  return openTrailDb(DB_NAME, [KEY_STORE, BLOB_STORE], DB_VERSION);
 }
 
 async function getOrCreateKey(): Promise<CryptoKey> {
