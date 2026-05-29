@@ -186,6 +186,35 @@ describe("CIDR guards", () => {
     expect(isBlockedIPv6("::ffff:10.0.0.1")).toBe(true);
   });
 
+  it("blocks multicast (ff00::/8) and unspecified (::)", () => {
+    expect(isBlockedIPv6("ff02::1")).toBe(true);
+    expect(isBlockedIPv6("ff00::1")).toBe(true);
+    expect(isBlockedIPv6("::")).toBe(true);
+  });
+
+  it("blocks the documentation prefix 2001:db8::/32", () => {
+    expect(isBlockedIPv6("2001:db8::1")).toBe(true);
+    expect(isBlockedIPv6("2001:db8:abcd:0012::1")).toBe(true);
+  });
+
+  it("blocks 6to4 (2002::/16) that tunnels to a blocked v4", () => {
+    // 2002:0a00::  =  6to4 of 10.0.0.0 — the classic bypass vector.
+    expect(isBlockedIPv6("2002:0a00::")).toBe(true);
+    expect(isBlockedIPv6("2002:0a00:0001::1")).toBe(true);
+    // 2002:7f00::  =  6to4 of 127.0.0.0
+    expect(isBlockedIPv6("2002:7f00:0001::")).toBe(true);
+    // 2002 of a public v4 (8.8.8.8 → 2002:0808:0808::) — not blocked by the
+    // 6to4 rule itself, kept enabled so we don't over-block legitimate
+    // tunnels.
+    expect(isBlockedIPv6("2002:0808:0808::")).toBe(false);
+  });
+
+  it("blocks the NAT64 prefix (64:ff9b::/96)", () => {
+    // The full /96 is a translation prefix; defensively refuse it entirely.
+    expect(isBlockedIPv6("64:ff9b::0808:0808")).toBe(true);
+    expect(isBlockedIPv6("64:ff9b::8.8.8.8")).toBe(true);
+  });
+
   it("allows public IPv6", () => {
     expect(isBlockedIPv6("2606:4700:4700::1111")).toBe(false);
   });
@@ -419,25 +448,28 @@ describe("fetch_url tool (hardened)", () => {
     await expect(p).rejects.toThrow();
   });
 
-  it("strips credential headers across cross-origin redirects", async () => {
-    // We can't observe headers directly on hop 0 (we set them inside the
-    // tool), but we can verify the next-hop call doesn't carry an Authorization
-    // header that was implicitly forwarded. Cover by exercising the path and
-    // asserting the success.
+  it("strips credential headers across cross-origin redirects but keeps them same-origin", async () => {
+    // Hop 0 (start.example.com) → cross-origin to other.example.com → must
+    // strip. We pass auth + cookie via initialHeaders so the production
+    // stripping path is actually exercised (vs. relying on defaults that
+    // never carried credentials in the first place).
     const fetchMock = vi
       .fn()
-      .mockImplementationOnce(() =>
-        Promise.resolve(
+      .mockImplementationOnce((_u: string, init: RequestInit) => {
+        const headers = init.headers as Record<string, string>;
+        // Hop 0: credentials should still be present (initialHeaders).
+        expect(headers).toHaveProperty("authorization", "Bearer secret");
+        expect(headers).toHaveProperty("cookie", "session=x");
+        return Promise.resolve(
           mockResponse({
             status: 302,
             headers: { location: "https://other.example.com/landed" },
           }),
-        ),
-      )
+        );
+      })
       .mockImplementationOnce((_u: string, init: RequestInit) => {
         const headers = init.headers as Record<string, string>;
-        // We didn't set Authorization ourselves, so this is mostly a smoke
-        // check that the second call gets clean headers.
+        // Hop 1: cross-origin — credentials MUST be gone.
         expect(headers).not.toHaveProperty("authorization");
         expect(headers).not.toHaveProperty("cookie");
         return Promise.resolve(
@@ -447,9 +479,40 @@ describe("fetch_url tool (hardened)", () => {
     const t = makeFetchUrlTool({
       fetch: fetchMock as never,
       lookup: publicLookup,
+      initialHeaders: { authorization: "Bearer secret", cookie: "session=x" },
     });
     const result = await runFetch(t, "https://start.example.com/");
     expect(result.text).toContain("Landed safely");
+  });
+
+  it("preserves credential headers across same-origin redirects", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockImplementationOnce(() =>
+        Promise.resolve(
+          mockResponse({
+            status: 302,
+            // same-origin: same scheme + host + port
+            headers: { location: "https://start.example.com/next" },
+          }),
+        ),
+      )
+      .mockImplementationOnce((_u: string, init: RequestInit) => {
+        const headers = init.headers as Record<string, string>;
+        // Hop 1: same-origin — credentials should be preserved.
+        expect(headers).toHaveProperty("authorization", "Bearer secret");
+        expect(headers).toHaveProperty("cookie", "session=x");
+        return Promise.resolve(
+          mockResponse({ body: html("<p>Same origin landed.</p>") }),
+        );
+      });
+    const t = makeFetchUrlTool({
+      fetch: fetchMock as never,
+      lookup: publicLookup,
+      initialHeaders: { authorization: "Bearer secret", cookie: "session=x" },
+    });
+    const result = await runFetch(t, "https://start.example.com/");
+    expect(result.text).toContain("Same origin");
   });
 
   it("falls back to cheerio when readability returns nothing", async () => {
@@ -478,5 +541,109 @@ describe("fetch_url tool (hardened)", () => {
     await expect(runFetch(t, "https://example.com/")).rejects.toThrow(
       /fetch 404/,
     );
+  });
+
+  it("aborts body reading when the abort signal fires", async () => {
+    // Stream that delivers a small chunk, then waits forever. The tool's
+    // timeout signal should propagate to the body reader and abort the read.
+    const stream = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode("partial"));
+        // intentionally never close
+      },
+    });
+    const fetchMock = vi.fn().mockImplementation((_u, init: RequestInit) => {
+      // Resolve with the slow-streaming response right away; signal is on init.
+      void init; // signal is wired into the response body abort below via the tool's loop
+      return Promise.resolve(
+        mockResponse({
+          body: stream,
+          headers: { "content-type": "text/html" },
+        }),
+      );
+    });
+    const t = makeFetchUrlTool({
+      fetch: fetchMock as never,
+      lookup: publicLookup,
+      timeoutMs: 50,
+    });
+    await expect(
+      runFetch(t, "https://example.com/slow-body"),
+    ).rejects.toThrow();
+  });
+
+  it("constructs the dispatcher with a connect.lookup that yields the pinned address", async () => {
+    // Regression guard for IP pinning. We can't `vi.spyOn(undici, "Agent")`
+    // (ESM exports aren't configurable), so we observe the dispatcher
+    // indirectly: the injected `fetch` receives the init object containing
+    // the `dispatcher` undici built; we pull the `connect.lookup` off it via
+    // a stash, then verify it returns the address our SSRF guard pinned.
+    // A real integration test belongs in PR2 alongside the renderer.
+    const pinnedAddr = "203.0.113.42"; // TEST-NET-3, definitely not loopback
+    const lookup: LookupAllFn = async () => [
+      { address: pinnedAddr, family: 4 },
+    ];
+
+    type DispatcherWithConnect = {
+      [k in keyof object]: never;
+    } & {
+      // undici Agent exposes internal symbols; we read the constructor arg
+      // we passed through via a side-channel below.
+    };
+    let capturedDispatcher: DispatcherWithConnect | undefined;
+    const fetchMock = vi.fn().mockImplementation((_u, init: RequestInit) => {
+      capturedDispatcher = (
+        init as unknown as { dispatcher: DispatcherWithConnect }
+      ).dispatcher;
+      return Promise.resolve(mockResponse({ body: html("<p>Pinned OK.</p>") }));
+    });
+
+    const t = makeFetchUrlTool({
+      fetch: fetchMock as never,
+      lookup,
+    });
+    const result = await runFetch(t, "https://pin-target.example/");
+    expect(result.text).toContain("Pinned OK");
+    expect(capturedDispatcher).toBeDefined();
+    expect(capturedDispatcher?.constructor?.name).toBe("Agent");
+
+    // Reach into the Agent's stored options to find the lookup we installed.
+    // undici stashes the constructor opts on a symbol; the safe public path
+    // is to walk own-symbols looking for an object with `connect.lookup`.
+    type ConnectLookup = (
+      host: string,
+      options: unknown,
+      cb: (err: Error | null, address: string, family: number) => void,
+    ) => void;
+    let installedLookup: ConnectLookup | undefined;
+    if (capturedDispatcher) {
+      const symbols = Object.getOwnPropertySymbols(capturedDispatcher);
+      for (const sym of symbols) {
+        const val = (capturedDispatcher as unknown as Record<symbol, unknown>)[
+          sym
+        ];
+        if (
+          val &&
+          typeof val === "object" &&
+          "connect" in val &&
+          val.connect &&
+          typeof val.connect === "object" &&
+          "lookup" in (val.connect as object)
+        ) {
+          installedLookup = (val.connect as { lookup: ConnectLookup }).lookup;
+          break;
+        }
+      }
+    }
+    expect(typeof installedLookup).toBe("function");
+    const cbResult = await new Promise<{ addr: string; fam: number }>(
+      (resolve) => {
+        installedLookup?.("does-not-matter", {}, (_err, addr, fam) =>
+          resolve({ addr, fam }),
+        );
+      },
+    );
+    expect(cbResult.addr).toBe(pinnedAddr);
+    expect(cbResult.fam).toBe(4);
   });
 });

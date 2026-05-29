@@ -58,15 +58,6 @@ function RenderModePreview({ shape }: WebpageNodeProps) {
           title={`${shape.props.title} live preview`}
         />
       );
-    case "archive":
-      return (
-        <iframe
-          className="h-full w-full bg-white"
-          sandbox="allow-same-origin"
-          src="/archive-demo.html"
-          title={`${shape.props.title} archived preview`}
-        />
-      );
     case "screenshot":
       return (
         // biome-ignore lint/performance/noImgElement: tldraw shape previews use a plain image inside the canvas.
