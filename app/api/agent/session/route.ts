@@ -12,7 +12,11 @@
  */
 
 import type { NextRequest } from "next/server";
-import { runSession, type SessionRequest } from "@/lib/agent/session";
+import {
+  classifyError,
+  runSession,
+  type SessionRequest,
+} from "@/lib/agent/session";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -61,11 +65,15 @@ export async function POST(req: NextRequest) {
           );
         }
       } catch (err) {
-        const message = err instanceof Error ? err.message : "agent run failed";
+        // Synchronous setup failures (bad provider id, AI SDK module
+        // load errors, etc.) land here. Match the runner's error mapping
+        // so we never ship a raw provider/SDK string downstream — those
+        // strings can include prompts, URLs, or stack traces. Same fix
+        // PR1 applied to the old route after review.
+        console.error("[trail] agent session route error", err);
+        const payload = { kind: "error", ...classifyError(err) };
         controller.enqueue(
-          encoder.encode(
-            `data: ${JSON.stringify({ kind: "error", message })}\n\n`,
-          ),
+          encoder.encode(`data: ${JSON.stringify(payload)}\n\n`),
         );
       } finally {
         controller.close();

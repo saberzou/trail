@@ -86,24 +86,49 @@ export async function streamSession(
  * Vertical-column layout state. Keyed by something the caller controls (a
  * runId — usually we generate one per turn). First tile lands at the
  * viewport center; subsequent tiles stack 240px down.
+ *
+ * `columnAnchors` snapshots the viewport center on the FIRST tile placement
+ * per runId so subsequent tiles align to the same x/y origin even if the
+ * user pans the canvas mid-stream. Without this, panning between
+ * `node` events would fragment the column.
+ *
+ * `runSessionTurn` is responsible for clearing both maps on completion
+ * (including the failure path) — otherwise both grow without bound.
  */
 const columnCursors = new Map<string, number>();
+const columnAnchors = new Map<string, { x: number; y: number }>();
 
 export function placeTileInColumn(
   editor: Editor,
   runId: string,
 ): { x: number; y: number } {
-  const center = editor.getViewportPageBounds().center;
+  let anchor = columnAnchors.get(runId);
+  if (!anchor) {
+    const c = editor.getViewportPageBounds().center;
+    anchor = { x: c.x, y: c.y };
+    columnAnchors.set(runId, anchor);
+  }
   const cursor = columnCursors.get(runId) ?? 0;
-  const x = center.x - TILE_W / 2;
-  const y = center.y - TILE_H / 2 + cursor * COLUMN_GAP;
+  const x = anchor.x - TILE_W / 2;
+  const y = anchor.y - TILE_H / 2 + cursor * COLUMN_GAP;
   columnCursors.set(runId, cursor + 1);
   return { x, y };
 }
 
-/** Test-only: reset the column cursor map. */
+/** Test-only: reset both column-layout maps. */
 export function _resetColumnCursors() {
   columnCursors.clear();
+  columnAnchors.clear();
+}
+
+/** Test-only: how many runIds are still tracked in the layout maps. */
+export function _getColumnCursorCount(): number {
+  return columnCursors.size;
+}
+
+/** Test-only: how many anchors are still tracked. */
+export function _getColumnAnchorCount(): number {
+  return columnAnchors.size;
 }
 
 export type RunSessionCallbacks = {
@@ -111,6 +136,9 @@ export type RunSessionCallbacks = {
   onFlowMeta?: (intent: "task" | "explore", downgraded: boolean) => void;
   onError?: (message: string) => void;
   onDone?: () => void;
+  /** Fires once per successfully created tile shape — caller uses this for
+   * per-turn tile counts (ChatPanel's "Done — added N tiles" line). */
+  onNode?: () => void;
   /** Used by tests to override the column-layout runId. */
   runId?: string;
   /** Inject a fetch (tests). */
@@ -155,8 +183,13 @@ export async function runSessionTurn(
                   summary: event.summary,
                 },
               });
+              callbacks.onNode?.();
             } catch (err) {
+              // Surface to chat so the user sees *something* per missing
+              // tile, but don't abort — keep processing the remaining
+              // node events in this run.
               console.error("[trail] createShape failed", err);
+              callbacks.onError?.(`Couldn't add tile for ${event.url}`);
             }
             break;
           }
@@ -179,5 +212,10 @@ export async function runSessionTurn(
     }
     const message = err instanceof Error ? err.message : "agent run failed";
     callbacks.onError?.(message);
+  } finally {
+    // Prune layout state for this run so the maps don't grow without
+    // bound across sessions. Cleared on both success and failure.
+    columnCursors.delete(runId);
+    columnAnchors.delete(runId);
   }
 }

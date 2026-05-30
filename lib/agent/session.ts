@@ -139,6 +139,31 @@ function safeHostname(url: string): string {
   }
 }
 
+/**
+ * Map a validated flow step into a `node` SessionEvent. Extracted so the
+ * `requiresLogin → mode` policy lives in one testable spot: login-walled
+ * targets (USCIS, banks, gov forms) ship as `link` so the WebpageNode
+ * doesn't even attempt a screenshot or iframe — there's nothing useful to
+ * capture behind the auth wall, and the link tile lets the user click
+ * through in their own browser context.
+ */
+export function nodeFromStep(step: {
+  title: string;
+  url: string;
+  instruction: string;
+  requiresLogin: boolean;
+}): Extract<SessionEvent, { kind: "node" }> {
+  return {
+    kind: "node",
+    nodeId: nanoid(10),
+    title: step.title,
+    url: step.url,
+    hostname: safeHostname(step.url),
+    mode: step.requiresLogin ? "link" : "screenshot",
+    summary: step.instruction,
+  };
+}
+
 function buildSystemPrompt(opts: {
   hasSearch: boolean;
   canvasContext: { title: string; url: string }[];
@@ -187,8 +212,13 @@ function toModelMessages(messages: ChatMessage[]): ModelMessage[] {
 /**
  * Map a thrown error into a user-facing message. We don't want to leak raw
  * provider SDK strings — they often contain prompts, URLs, or stack traces.
+ * Exported so the SSE route's outer catch can use the same mapping the
+ * runner does for in-stream errors.
  */
-function classifyError(err: unknown): { message: string; code?: string } {
+export function classifyError(err: unknown): {
+  message: string;
+  code?: string;
+} {
   if (err instanceof Error) {
     const name = err.name;
     const msg = err.message;
@@ -323,17 +353,7 @@ export async function* runSession(
         downgraded: forceDowngrade,
       });
       for (const step of effectivePlan.steps) {
-        enqueue({
-          kind: "node",
-          nodeId: nanoid(10),
-          title: step.title,
-          url: step.url,
-          hostname: safeHostname(step.url),
-          // PR2b: ship everything as screenshot. The WebpageNode UI will
-          // fall back to link if the screenshot sidecar refuses.
-          mode: "screenshot",
-          summary: step.instruction,
-        });
+        enqueue(nodeFromStep(step));
       }
       return {
         ok: true,

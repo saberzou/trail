@@ -391,6 +391,10 @@ async function handleAgent(
   });
 
   let liveText = "";
+  // Counts tiles placed THIS turn only — not the editor's total webpage
+  // shape count, which would include any prior turn's tiles and the URL-
+  // paste tiles. Incremented in onNode, which runSessionTurn fires once
+  // per successful createShape.
   let tileCount = 0;
   let lastError: string | null = null;
 
@@ -407,18 +411,14 @@ async function handleAgent(
     onFlowMeta: () => {
       // PR2c will use this to bias layout topology.
     },
+    onNode: () => {
+      tileCount += 1;
+    },
     onError: (message) => {
       lastError = message;
     },
     onDone: () => {
-      // Walk the editor on the next tick to count placed tiles in this run.
-      try {
-        tileCount = editor
-          .getCurrentPageShapes()
-          .filter((s) => s.type === "webpage").length;
-      } catch {
-        // ignore
-      }
+      // No-op — tileCount accumulates in onNode.
     },
   });
 
@@ -431,7 +431,9 @@ async function handleAgent(
 
   if (!liveText.trim()) {
     const tileLine =
-      tileCount > 0 ? `Done — added tiles to the canvas.` : "Done.";
+      tileCount > 0
+        ? `Done — added ${tileCount} tile${tileCount === 1 ? "" : "s"} to the canvas.`
+        : "Done.";
     updateMessage((m) =>
       m.id === placeholderId ? { ...m, text: tileLine } : m,
     );
