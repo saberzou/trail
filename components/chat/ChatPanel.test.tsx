@@ -13,12 +13,22 @@ import React from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { setCanvasEditor } from "@/lib/canvas/editorRef";
 import { wipeChat } from "@/lib/chat/persistence";
+import { useSettingsStore } from "@/lib/settings/store";
+
+// Mock the agent bridge BEFORE importing ChatPanel so the component picks
+// up the mocked function via the module loader.
+vi.mock("@/lib/chat/agentBridge", () => ({
+  runAgentTurn: vi.fn(async () => {}),
+}));
+
+import { runAgentTurn } from "@/lib/chat/agentBridge";
 import { ChatPanel } from "./ChatPanel";
 
 type MockEditor = {
   createShape: ReturnType<typeof vi.fn>;
   updateShape: ReturnType<typeof vi.fn>;
   getViewportPageBounds: ReturnType<typeof vi.fn>;
+  getCurrentPageShapes: ReturnType<typeof vi.fn>;
 };
 
 function makeEditor(): MockEditor {
@@ -26,6 +36,7 @@ function makeEditor(): MockEditor {
     createShape: vi.fn(),
     updateShape: vi.fn(),
     getViewportPageBounds: vi.fn(() => ({ center: { x: 0, y: 0 } })),
+    getCurrentPageShapes: vi.fn(() => []),
   };
 }
 
@@ -37,20 +48,42 @@ function jsonResponse(body: unknown, init: ResponseInit = {}): Response {
   });
 }
 
+/** Seed the settings store with a configured LLM provider. */
+function configureProvider() {
+  useSettingsStore.setState({
+    hydrated: true,
+    settings: {
+      version: 1,
+      providers: {
+        openai: { kind: "api-key", apiKey: "sk-test" },
+      },
+      defaultLlm: "openai",
+    },
+  });
+}
+
+function clearProviders() {
+  useSettingsStore.setState({
+    hydrated: true,
+    settings: { version: 1, providers: {} },
+  });
+}
+
 describe("ChatPanel", () => {
   let editor: MockEditor;
 
   beforeEach(async () => {
     await wipeChat();
     editor = makeEditor();
-    // Cast to satisfy editorRef's Editor typing; only the methods we touch
-    // matter inside ChatPanel's URL-paste path.
     setCanvasEditor(editor as unknown as Parameters<typeof setCanvasEditor>[0]);
     // Default fetch mock — individual tests override as needed.
     vi.stubGlobal(
       "fetch",
       vi.fn(async () => jsonResponse({ iframeable: false })),
     );
+    vi.mocked(runAgentTurn).mockReset();
+    vi.mocked(runAgentTurn).mockImplementation(async () => {});
+    clearProviders();
   });
 
   afterEach(() => {
@@ -124,18 +157,74 @@ describe("ChatPanel", () => {
     expect(editor.createShape.mock.calls[0][0].props.mode).toBe("iframe");
   });
 
-  it("non-URL text shows the placeholder assistant reply", async () => {
+  it("free-form text with a configured provider invokes the agent and renders streamed text", async () => {
+    configureProvider();
+    vi.mocked(runAgentTurn).mockImplementation(
+      async (_editor, _req, _signal, callbacks) => {
+        callbacks?.onAssistantText?.("Looking into ducks");
+        callbacks?.onAssistantText?.(" right now.");
+        callbacks?.onDone?.();
+      },
+    );
+
+    render(React.createElement(ChatPanel));
+    const textarea = await screen.findByLabelText("Message input");
+    fireEvent.change(textarea, { target: { value: "tell me about ducks" } });
+    fireEvent.submit(textarea.closest("form")!);
+
+    await waitFor(() => {
+      expect(runAgentTurn).toHaveBeenCalledTimes(1);
+    });
+    expect(
+      await screen.findByText(/Looking into ducks right now\./i),
+    ).toBeInTheDocument();
+  });
+
+  it("free-form text with NO provider configured shows the settings hint", async () => {
+    // No providers seeded; clearProviders() ran in beforeEach.
     render(React.createElement(ChatPanel));
     const textarea = await screen.findByLabelText("Message input");
     fireEvent.change(textarea, { target: { value: "tell me about ducks" } });
     fireEvent.submit(textarea.closest("form")!);
     expect(
-      await screen.findByText(/master agent arrives in the next update/i),
+      await screen.findByText(
+        /Configure an LLM provider in \/settings first\./i,
+      ),
     ).toBeInTheDocument();
-    expect(editor.createShape).not.toHaveBeenCalled();
+    expect(runAgentTurn).not.toHaveBeenCalled();
   });
 
-  it("Send button is disabled while in-flight", async () => {
+  it("Stop button during a stream aborts the controller", async () => {
+    configureProvider();
+    const receivedSignals: AbortSignal[] = [];
+    let resolveTurn: () => void = () => {};
+    vi.mocked(runAgentTurn).mockImplementation(
+      async (_editor, _req, signal, callbacks) => {
+        receivedSignals.push(signal);
+        callbacks?.onAssistantText?.("starting...");
+        await new Promise<void>((res) => {
+          resolveTurn = res;
+        });
+        callbacks?.onDone?.();
+      },
+    );
+
+    render(React.createElement(ChatPanel));
+    const textarea = await screen.findByLabelText("Message input");
+    fireEvent.change(textarea, { target: { value: "us visa application" } });
+    fireEvent.submit(textarea.closest("form")!);
+
+    const stopButton = await screen.findByRole("button", { name: /stop/i });
+    expect(stopButton).toBeInTheDocument();
+    fireEvent.click(stopButton);
+    expect(receivedSignals[0]?.aborted).toBe(true);
+    // Let the mocked turn settle so React unmounts cleanly.
+    await act(async () => {
+      resolveTurn();
+    });
+  });
+
+  it("Send button is disabled while in-flight (URL path)", async () => {
     let resolveProbe: (r: Response) => void = () => {};
     vi.stubGlobal(
       "fetch",
@@ -150,16 +239,19 @@ describe("ChatPanel", () => {
     const textarea = await screen.findByLabelText("Message input");
     fireEvent.change(textarea, { target: { value: "https://example.com" } });
     fireEvent.submit(textarea.closest("form")!);
+    // Stop button (not Send) is what's visible while in-flight.
     await waitFor(() => {
-      expect(screen.getByRole("button", { name: /sending/i })).toBeDisabled();
+      expect(screen.getByRole("button", { name: /stop/i })).toBeInTheDocument();
     });
-    // Resolve so React unmounts cleanly.
     await act(async () => {
       resolveProbe(jsonResponse({ iframeable: false }));
     });
   });
 
   it("URL detection: accepts bare URL, query strings, fragments; rejects spaces, markdown, multiple URLs", async () => {
+    // For non-URL inputs the agent path runs; with no provider configured
+    // the friendly settings message appears. We assert createShape is only
+    // called for inputs we expect to be URLs.
     const cases: Array<{ input: string; expectsShape: boolean }> = [
       { input: "https://example.com", expectsShape: true },
       { input: "  https://example.com  ", expectsShape: true }, // trimmed
@@ -192,9 +284,10 @@ describe("ChatPanel", () => {
         });
       } else {
         await waitFor(() => {
-          // Wait for either the placeholder reply or any state update.
+          // Either the no-provider hint (free-form path) or canvas-not-ready
+          // fires when the input isn't a lone URL.
           const placeholders = screen.queryAllByText(
-            /master agent arrives|Couldn't add|Canvas isn't ready/i,
+            /Configure an LLM provider|Couldn't add|Canvas isn't ready/i,
           );
           expect(placeholders.length).toBeGreaterThan(0);
         });
@@ -244,7 +337,7 @@ describe("ChatPanel", () => {
 
     // Sending state should be active.
     await waitFor(() => {
-      expect(screen.getByRole("button", { name: /sending/i })).toBeDisabled();
+      expect(screen.getByRole("button", { name: /stop/i })).toBeInTheDocument();
     });
 
     // Try to submit a second URL while the first is still in-flight.
@@ -260,9 +353,6 @@ describe("ChatPanel", () => {
     await waitFor(() => {
       expect(editor.createShape).toHaveBeenCalledTimes(1);
     });
-    // Only the first URL made it to createShape. ChatPanel passes the
-    // raw (trimmed) text — it doesn't run the input through the URL
-    // constructor, so no trailing slash normalization happens here.
     expect(editor.createShape.mock.calls[0][0].props.url).toBe(
       "https://first.example",
     );
@@ -275,15 +365,10 @@ describe("ChatPanel", () => {
     fireEvent.change(textarea, { target: { value: "https://example.com" } });
     fireEvent.submit(textarea.closest("form")!);
     expect(await screen.findByText(/Canvas isn't ready/i)).toBeInTheDocument();
-    // No probe issued, no shape created.
     expect(editor.createShape).not.toHaveBeenCalled();
   });
 
   it("hydration race: messages submitted before loadChat resolves are preserved", async () => {
-    // Replace fake-indexeddb's loadChat by intercepting at the module
-    // boundary. We delay the resolution to simulate a slow first read,
-    // submit during the wait, then resolve and assert the user message
-    // wasn't clobbered.
     const persistence = await import("@/lib/chat/persistence");
     let resolveLoad: (h: { version: 1; messages: [] }) => void = () => {};
     const loadSpy = vi.spyOn(persistence, "loadChat").mockImplementation(
@@ -298,16 +383,13 @@ describe("ChatPanel", () => {
     fireEvent.change(textarea, { target: { value: "tell me about ducks" } });
     fireEvent.submit(textarea.closest("form")!);
 
-    // Wait for the placeholder reply to appear (local state has messages now).
-    await screen.findByText(/master agent arrives/i);
+    // No provider configured → settings hint appears, plus the user message.
+    await screen.findByText(/Configure an LLM provider/i);
 
-    // Now resolve loadChat with empty history. The component's functional
-    // setMessages guards against overwriting when messages already exist.
     await act(async () => {
       resolveLoad({ version: 1, messages: [] });
     });
 
-    // The user message should still be there.
     expect(screen.getByText("tell me about ducks")).toBeInTheDocument();
     loadSpy.mockRestore();
   });
@@ -317,8 +399,8 @@ describe("ChatPanel", () => {
     const textarea = await screen.findByLabelText("Message input");
     fireEvent.change(textarea, { target: { value: "hello world" } });
     fireEvent.submit(textarea.closest("form")!);
-    // Wait for the placeholder reply to appear (signals work is done).
-    await screen.findByText(/master agent arrives in the next update/i);
+    // No provider configured → friendly hint is the assistant reply.
+    await screen.findByText(/Configure an LLM provider/i);
     // Wait past the debounce.
     await new Promise((r) => setTimeout(r, 500));
     const { loadChat } = await import("@/lib/chat/persistence");
