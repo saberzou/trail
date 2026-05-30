@@ -10,7 +10,9 @@ import {
   useState,
 } from "react";
 import { createShapeId } from "tldraw";
+import type { SessionRequest } from "@/lib/agent/session";
 import { getCanvasEditor } from "@/lib/canvas/editorRef";
+import { runAgentTurn } from "@/lib/chat/agentBridge";
 import {
   type ChatHistory,
   type ChatMessage,
@@ -18,6 +20,8 @@ import {
   saveChat,
 } from "@/lib/chat/persistence";
 import { createDebouncedSaver } from "@/lib/idb/saver";
+import { useSettingsStore } from "@/lib/settings/store";
+import type { ProviderConfig, ProviderId } from "@/lib/settings/types";
 
 const RENDERER_BASE_URL =
   process.env.NEXT_PUBLIC_TRAIL_RENDERER_URL ?? "http://127.0.0.1:3001";
@@ -63,6 +67,8 @@ export function ChatPanel() {
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Held while the agent is streaming so the Stop button can abort.
+  const abortRef = useRef<AbortController | null>(null);
 
   const messagesRef = useRef<ChatMessage[]>([]);
   messagesRef.current = messages;
@@ -141,18 +147,25 @@ export function ChatPanel() {
           setMessages((prev) => [...prev, reply]),
         );
       } else {
-        const reply: ChatMessage = {
-          id: nanoid(),
-          role: "assistant",
-          text: "Free-form chat with the master agent arrives in the next update. For now, paste a URL and I'll add it as a tile.",
-          createdAt: Date.now(),
-        };
-        setMessages((prev) => [...prev, reply]);
+        // History at submission time, including the user message we just
+        // pushed. The agent needs both for context.
+        const history = [...messagesRef.current, userMsg];
+        await handleAgent(
+          history,
+          (reply) => setMessages((prev) => [...prev, reply]),
+          (updater) => setMessages((prev) => prev.map(updater)),
+          abortRef,
+        );
       }
     } finally {
       setSending(false);
+      abortRef.current = null;
     }
   }, [input, sending]);
+
+  const stop = useCallback(() => {
+    abortRef.current?.abort();
+  }, []);
 
   const onKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
@@ -213,17 +226,216 @@ export function ChatPanel() {
         />
         <div className="mt-2 flex items-center justify-between text-[11px] text-[#5d6256]">
           <span>Cmd+Enter to send</span>
-          <button
-            className="rounded bg-[#273321] px-3 py-1 font-medium text-[12px] text-white disabled:cursor-not-allowed disabled:bg-[#a5a89c]"
-            disabled={sending || input.trim().length === 0}
-            type="submit"
-          >
-            {sending ? "sending..." : "Send"}
-          </button>
+          {sending ? (
+            <button
+              className="rounded bg-[#7a3b35] px-3 py-1 font-medium text-[12px] text-white hover:bg-[#5f2c28]"
+              onClick={stop}
+              type="button"
+            >
+              Stop
+            </button>
+          ) : (
+            <button
+              className="rounded bg-[#273321] px-3 py-1 font-medium text-[12px] text-white disabled:cursor-not-allowed disabled:bg-[#a5a89c]"
+              disabled={input.trim().length === 0}
+              type="submit"
+            >
+              Send
+            </button>
+          )}
         </div>
       </form>
     </aside>
   );
+}
+
+/**
+ * Map the settings store's provider records into the SessionRequest fields
+ * the agent expects. Returns null if no usable LLM provider is configured —
+ * the caller surfaces a friendly "Configure /settings" message in that case.
+ */
+function selectAgentProviders(
+  providers: Partial<Record<ProviderId, ProviderConfig>>,
+  defaultLlm: ProviderId | undefined,
+  defaultSearch: ProviderId | undefined,
+): {
+  providerId: SessionRequest["providerId"];
+  apiKey: string;
+  searchProvider?: "brave" | "tavily";
+  searchKey?: string;
+} | null {
+  // Map our settings-side ProviderId ("gemini") to the agent runner's
+  // provider key ("google"). Copilot isn't supported by the runner yet.
+  const llmMap: Record<string, SessionRequest["providerId"]> = {
+    openai: "openai",
+    anthropic: "anthropic",
+    gemini: "google",
+    deepseek: "deepseek",
+  };
+
+  // Try the user-chosen default first; otherwise pick any configured
+  // api-key provider in priority order.
+  const tryProvider = (id: ProviderId | undefined) => {
+    if (!id) return null;
+    const cfg = providers[id];
+    if (!cfg || cfg.kind !== "api-key") return null;
+    const mapped = llmMap[id];
+    if (!mapped) return null;
+    return { providerId: mapped, apiKey: cfg.apiKey };
+  };
+
+  const picked =
+    tryProvider(defaultLlm) ??
+    tryProvider("openai") ??
+    tryProvider("anthropic") ??
+    tryProvider("gemini") ??
+    tryProvider("deepseek");
+  if (!picked) return null;
+
+  let search: { searchProvider: "brave" | "tavily"; searchKey: string } | null =
+    null;
+  const searchId: ProviderId | undefined =
+    defaultSearch && providers[defaultSearch]
+      ? defaultSearch
+      : providers.brave
+        ? "brave"
+        : providers.tavily
+          ? "tavily"
+          : undefined;
+  if (searchId && (searchId === "brave" || searchId === "tavily")) {
+    const cfg = providers[searchId];
+    if (cfg && cfg.kind === "api-key") {
+      search = { searchProvider: searchId, searchKey: cfg.apiKey };
+    }
+  }
+
+  return search ? { ...picked, ...search } : picked;
+}
+
+async function handleAgent(
+  history: ChatMessage[],
+  push: (m: ChatMessage) => void,
+  updateMessage: (updater: (m: ChatMessage) => ChatMessage) => void,
+  abortRef: { current: AbortController | null },
+): Promise<void> {
+  const editor = getCanvasEditor();
+  if (!editor) {
+    push({
+      id: nanoid(),
+      role: "assistant",
+      text: "Canvas isn't ready yet — try again in a moment.",
+      createdAt: Date.now(),
+    });
+    return;
+  }
+
+  const { settings } = useSettingsStore.getState();
+  const picked = selectAgentProviders(
+    settings.providers,
+    settings.defaultLlm,
+    settings.defaultSearch,
+  );
+  if (!picked) {
+    push({
+      id: nanoid(),
+      role: "assistant",
+      text: "Configure an LLM provider in /settings first.",
+      createdAt: Date.now(),
+    });
+    return;
+  }
+
+  // Gather existing webpage tiles as context. We limit to the 10 most
+  // recently-created (tldraw assigns shape ids in creation order) so the
+  // prompt stays compact. Falls back gracefully if `getCurrentPageShapes`
+  // is missing — the runner caps at 10 too.
+  const canvasContext: { title: string; url: string }[] = [];
+  try {
+    const shapes = editor.getCurrentPageShapes() as Array<{
+      type: string;
+      props: { title?: string; url?: string };
+    }>;
+    for (const s of shapes) {
+      if (
+        s.type === "webpage" &&
+        typeof s.props.url === "string" &&
+        s.props.url
+      ) {
+        canvasContext.push({
+          title: s.props.title || s.props.url,
+          url: s.props.url,
+        });
+      }
+    }
+  } catch (err) {
+    console.warn("[trail] could not read canvas context", err);
+  }
+
+  const req: SessionRequest = {
+    messages: history,
+    canvasContext: canvasContext.slice(-10),
+    providerId: picked.providerId,
+    apiKey: picked.apiKey,
+    searchProvider: picked.searchProvider,
+    searchKey: picked.searchKey,
+  };
+
+  // Push a streaming placeholder. We update its text as `assistant_text`
+  // events arrive, and replace it with a status line on done/error.
+  const placeholderId = nanoid();
+  push({
+    id: placeholderId,
+    role: "assistant",
+    text: "",
+    createdAt: Date.now(),
+  });
+
+  let liveText = "";
+  let tileCount = 0;
+  let lastError: string | null = null;
+
+  const controller = new AbortController();
+  abortRef.current = controller;
+
+  await runAgentTurn(editor, req, controller.signal, {
+    onAssistantText: (delta) => {
+      liveText += delta;
+      updateMessage((m) =>
+        m.id === placeholderId ? { ...m, text: liveText } : m,
+      );
+    },
+    onFlowMeta: () => {
+      // PR2c will use this to bias layout topology.
+    },
+    onError: (message) => {
+      lastError = message;
+    },
+    onDone: () => {
+      // Walk the editor on the next tick to count placed tiles in this run.
+      try {
+        tileCount = editor
+          .getCurrentPageShapes()
+          .filter((s) => s.type === "webpage").length;
+      } catch {
+        // ignore
+      }
+    },
+  });
+
+  if (lastError) {
+    updateMessage((m) =>
+      m.id === placeholderId ? { ...m, text: lastError ?? "Agent error" } : m,
+    );
+    return;
+  }
+
+  if (!liveText.trim()) {
+    const tileLine =
+      tileCount > 0 ? `Done — added tiles to the canvas.` : "Done.";
+    updateMessage((m) =>
+      m.id === placeholderId ? { ...m, text: tileLine } : m,
+    );
+  }
 }
 
 async function handleUrl(
