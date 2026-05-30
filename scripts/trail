@@ -79,11 +79,18 @@ start_renderer() {
     log "renderer already running (pid $(cat "$RENDERER_PID_FILE"))"
     return 0
   fi
+  # Lockfile (noclobber) so two concurrent `trail` invocations can't
+  # both race past `is_renderer_running` and clobber the same PID file.
+  if ! ( set -C; : > "$RENDERER_PID_FILE.lock" ) 2>/dev/null; then
+    die "another trail process is starting the renderer (lockfile present at $RENDERER_PID_FILE.lock; remove if stale)"
+  fi
+  trap 'rm -f "$RENDERER_PID_FILE.lock"' RETURN
   log "starting renderer sidecar on :$RENDERER_PORT ..."
-  : > "$RENDERER_LOG"
+  printf "\n==== trail %s %s ====\n" "renderer-start" "$(date +%FT%T)" >>"$RENDERER_LOG"
   ( cd "$REPO_DIR" && TRAIL_RENDERER_PORT="$RENDERER_PORT" TRAIL_APP_PORT="$PORT" \
       nohup node "$REPO_DIR/scripts/trail-renderer.mjs" \
       >>"$RENDERER_LOG" 2>&1 & echo $! >"$RENDERER_PID_FILE" )
+  rm -f "$RENDERER_PID_FILE.lock"
 
   # Wait up to 10s for /health to return 200.
   local i=0
@@ -108,10 +115,15 @@ start_server() {
     log "already running (pid $(cat "$PID_FILE")) at $URL"
     return 0
   fi
+  if ! ( set -C; : > "$PID_FILE.lock" ) 2>/dev/null; then
+    die "another trail process is starting the server (lockfile present at $PID_FILE.lock; remove if stale)"
+  fi
+  trap 'rm -f "$PID_FILE.lock"' RETURN
   log "starting dev server on :$PORT ..."
-  : > "$LOG_FILE"
+  printf "\n==== trail %s %s ====\n" "server-start" "$(date +%FT%T)" >>"$LOG_FILE"
   ( cd "$REPO_DIR" && nohup pnpm dev --hostname "$HOST" --port "$PORT" \
       >>"$LOG_FILE" 2>&1 & echo $! >"$PID_FILE" )
+  rm -f "$PID_FILE.lock"
 
   # wait up to 60s for "Ready"
   local i=0
@@ -137,7 +149,11 @@ stop_renderer() {
   fi
   local pid; pid=$(cat "$RENDERER_PID_FILE")
   log "stopping renderer pid $pid ..."
-  kill -TERM "-$pid" 2>/dev/null || kill -TERM "$pid" 2>/dev/null || true
+  # Direct PID kill — the sidecar's SIGTERM handler closes the
+  # Chromium browser cleanly, which reaps its own subprocesses. No
+  # process-group trick needed (we don't setsid the spawn, so PGID
+  # tricks would target the wrong group anyway).
+  kill -TERM "$pid" 2>/dev/null || true
   sleep 1
   kill -KILL "$pid" 2>/dev/null || true
   rm -f "$RENDERER_PID_FILE"
@@ -151,9 +167,14 @@ stop_server() {
   fi
   local pid; pid=$(cat "$PID_FILE")
   log "stopping pid $pid ..."
-  # kill the whole process group so pnpm + next both die
-  kill -TERM "-$pid" 2>/dev/null || kill -TERM "$pid" 2>/dev/null || true
+  # pnpm spawns `next` as a child; killing pnpm doesn't automatically
+  # reap next. Kill direct children first, then the parent. (We can't
+  # use process-group kill because `nohup ... &` doesn't make pnpm a
+  # session leader.)
+  pkill -P "$pid" 2>/dev/null || true
+  kill -TERM "$pid" 2>/dev/null || true
   sleep 1
+  pkill -9 -P "$pid" 2>/dev/null || true
   kill -KILL "$pid" 2>/dev/null || true
   rm -f "$PID_FILE"
 }
@@ -210,6 +231,7 @@ case "$cmd" in
     stop_renderer; stop_server
     rm -rf "$REPO_DIR/node_modules" "$REPO_DIR/.next"
     (cd "$REPO_DIR" && pnpm install)
+    log "if screenshots fail after rebuild, re-run: trail install-renderer"
     start_server; open_browser
     ;;
   -h|--help|help)

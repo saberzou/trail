@@ -85,6 +85,12 @@ export async function wipeSnapshot(): Promise<void> {
     const req = indexedDB.deleteDatabase(DB_NAME);
     req.onsuccess = () => resolve();
     req.onerror = () => reject(req.error);
-    req.onblocked = () => resolve();
+    // Match wipeChat: warn but don't hang when another tab holds the DB open.
+    req.onblocked = () => {
+      console.warn(
+        "[trail] wipeSnapshot blocked — another tab holds the DB. Close other tabs and try again.",
+      );
+      resolve();
+    };
   });
 }

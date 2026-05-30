@@ -1,6 +1,13 @@
 // @vitest-environment jsdom
 import "@testing-library/jest-dom/vitest";
-import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
+import {
+  act,
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 import React from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { setCanvasEditor } from "@/lib/canvas/editorRef";
@@ -166,5 +173,101 @@ describe("WebpageNode", () => {
     vi.useRealTimers();
     expect(updateShape).toHaveBeenCalled();
     expect(updateShape.mock.calls[0][0].props.mode).toBe("screenshot");
+  });
+
+  it("iframe onError event flips mode to screenshot", async () => {
+    const updateShape = vi.fn();
+    setCanvasEditor({
+      updateShape,
+    } as unknown as Parameters<typeof setCanvasEditor>[0]);
+    const { container } = render(
+      React.createElement(WebpageNode, {
+        shape: makeShape({ mode: "iframe" }),
+      }),
+    );
+    // The native `error` listener is attached inside useEffect — wait for
+    // the iframe to be mounted AND for the effect to bind the listener.
+    const iframe = await waitFor(() => {
+      const el = container.querySelector("iframe");
+      expect(el).not.toBeNull();
+      return el!;
+    });
+    await act(async () => {
+      fireEvent.error(iframe);
+    });
+    expect(updateShape).toHaveBeenCalled();
+    expect(updateShape.mock.calls[0][0].props.mode).toBe("screenshot");
+  });
+
+  it("screenshot mode revokes the blob URL on unmount", async () => {
+    const fakeBlob = new Blob([new Uint8Array([0x89, 0x50])], {
+      type: "image/png",
+    });
+    const revokeSpy = vi.fn();
+    Object.assign(URL, {
+      createObjectURL: vi.fn(() => "blob:revokable"),
+      revokeObjectURL: revokeSpy,
+    });
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        async () =>
+          new Response(fakeBlob, {
+            status: 200,
+            headers: { "content-type": "image/png" },
+          }),
+      ),
+    );
+    const { container, unmount } = render(
+      React.createElement(WebpageNode, {
+        shape: makeShape({ mode: "screenshot" }),
+      }),
+    );
+    await waitFor(() => {
+      expect(container.querySelector("img")?.getAttribute("src")).toMatch(
+        /^blob:/,
+      );
+    });
+    unmount();
+    expect(revokeSpy).toHaveBeenCalledWith("blob:revokable");
+  });
+
+  it("screenshot fetch body includes the viewport dimensions", async () => {
+    const fetchSpy = vi.fn(
+      async () => new Response(new Blob(), { status: 500 }),
+    );
+    vi.stubGlobal("fetch", fetchSpy);
+    setCanvasEditor({
+      updateShape: vi.fn(),
+    } as unknown as Parameters<typeof setCanvasEditor>[0]);
+    render(
+      React.createElement(WebpageNode, {
+        shape: makeShape({ mode: "screenshot" }),
+      }),
+    );
+    await waitFor(() => {
+      expect(fetchSpy).toHaveBeenCalled();
+    });
+    const call = fetchSpy.mock.calls[0] as unknown as [string, RequestInit];
+    const init = call[1];
+    expect(init).toBeDefined();
+    const body = JSON.parse(init.body as string);
+    expect(body.viewport).toEqual({ width: 1280, height: 720 });
+  });
+
+  it("link mode Open buttons carry target=_blank rel=noopener noreferrer", () => {
+    render(
+      React.createElement(WebpageNode, {
+        shape: makeShape({ mode: "link", title: "Stripe checkout" }),
+      }),
+    );
+    const links = screen.getAllByRole("link", {
+      name: /Open URL in new tab|Open in new tab/i,
+    });
+    expect(links.length).toBeGreaterThan(0);
+    for (const link of links) {
+      expect(link.getAttribute("target")).toBe("_blank");
+      expect(link.getAttribute("rel")).toBe("noopener noreferrer");
+    }
   });
 });

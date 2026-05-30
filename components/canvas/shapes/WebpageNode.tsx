@@ -110,13 +110,25 @@ function IframeBody({
   // blocks — the browser just leaves the frame blank. We belt-and-suspender it
   // with a 1.5s load deadline: if `onLoad` hasn't fired by then, treat it as
   // blocked and fall back to screenshot mode.
+  //
+  // For the rare native `error` event (e.g. DNS failure), we attach a real
+  // DOM listener: React 19 doesn't bind `onError` on <iframe> at all
+  // (only `load` is registered as a non-delegated event for iframes), so a
+  // JSX `onError={...}` prop here would be silently dropped.
   const loadedRef = useRef(false);
+  const iframeRef = useRef<HTMLIFrameElement | null>(null);
   useEffect(() => {
     loadedRef.current = false;
     const timer = setTimeout(() => {
       if (!loadedRef.current) onLoadFail();
     }, 1500);
-    return () => clearTimeout(timer);
+    const el = iframeRef.current;
+    const onError = () => onLoadFail();
+    el?.addEventListener("error", onError);
+    return () => {
+      clearTimeout(timer);
+      el?.removeEventListener("error", onError);
+    };
   }, [onLoadFail]);
 
   return (
@@ -125,8 +137,8 @@ function IframeBody({
       onLoad={() => {
         loadedRef.current = true;
       }}
-      onError={onLoadFail}
       onPointerDown={(e) => e.stopPropagation()}
+      ref={iframeRef}
       sandbox="allow-scripts allow-forms"
       src={url}
       title={`${title} preview`}
@@ -149,7 +161,10 @@ function ScreenshotImg({ url, onError }: { url: string; onError: () => void }) {
         const r = await fetch(`${RENDERER_BASE_URL}/screenshot`, {
           method: "POST",
           headers: { "content-type": "application/json" },
-          body: JSON.stringify({ url }),
+          body: JSON.stringify({
+            url,
+            viewport: { width: 1280, height: 720 },
+          }),
         });
         if (!r.ok) throw new Error(`renderer returned ${r.status}`);
         const blob = await r.blob();
