@@ -20,11 +20,67 @@ import {
   saveChat,
 } from "@/lib/chat/persistence";
 import { createDebouncedSaver } from "@/lib/idb/saver";
-import { useSettingsStore } from "@/lib/settings/store";
+import { hydrateSettings, useSettingsStore } from "@/lib/settings/store";
 import type { ProviderConfig, ProviderId } from "@/lib/settings/types";
 
 const RENDERER_BASE_URL =
   process.env.NEXT_PUBLIC_TRAIL_RENDERER_URL ?? "http://127.0.0.1:3001";
+
+/** How often to re-probe the renderer sidecar while ChatPanel is mounted. */
+const RENDERER_HEALTH_INTERVAL_MS = 30_000;
+/** Per-attempt timeout for the /health probe. */
+const RENDERER_HEALTH_TIMEOUT_MS = 2_000;
+
+type RendererStatus = "checking" | "ok" | "offline";
+
+/**
+ * Polls the Playwright sidecar's /health endpoint so the user gets a visible
+ * signal when screenshots can't work. Starts "checking", flips to "ok" or
+ * "offline" on the first response (or timeout), and re-checks every 30s.
+ *
+ * Defensive: AbortSignal.timeout isn't in older runtimes (notably some
+ * test/jsdom builds) so we fall back to a manual AbortController.
+ */
+function useRendererHealth(): RendererStatus {
+  const [status, setStatus] = useState<RendererStatus>("checking");
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function probe(): Promise<void> {
+      const controller = new AbortController();
+      const timer = setTimeout(
+        () => controller.abort(),
+        RENDERER_HEALTH_TIMEOUT_MS,
+      );
+      try {
+        const res = await fetch(`${RENDERER_BASE_URL}/health`, {
+          method: "GET",
+          signal: controller.signal,
+        });
+        if (cancelled) return;
+        setStatus(res.ok ? "ok" : "offline");
+      } catch {
+        if (cancelled) return;
+        setStatus("offline");
+      } finally {
+        clearTimeout(timer);
+      }
+    }
+
+    void probe();
+    const interval = setInterval(() => {
+      void probe();
+    }, RENDERER_HEALTH_INTERVAL_MS);
+
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
+  }, []);
+
+  return status;
+}
 
 const URL_PATTERN = /^https?:\/\/[^\s/$.?#][^\s]*$/i;
 
@@ -69,6 +125,20 @@ export function ChatPanel() {
   const [error, setError] = useState<string | null>(null);
   // Held while the agent is streaming so the Stop button can abort.
   const abortRef = useRef<AbortController | null>(null);
+
+  // /canvas (typed URL) mounts ChatPanel without touching the settings store
+  // first; without this effect, the store stays in its initial empty state
+  // and every free-form question gets the "Configure an LLM" reply even
+  // though keys are sitting in IndexedDB. handleAgent also awaits a fresh
+  // hydration before reading providers — belt and braces.
+  const settingsHydrated = useSettingsStore((s) => s.hydrated);
+  useEffect(() => {
+    if (settingsHydrated) return;
+    if (typeof indexedDB === "undefined") return;
+    void hydrateSettings();
+  }, [settingsHydrated]);
+
+  const rendererStatus = useRendererHealth();
 
   const messagesRef = useRef<ChatMessage[]>([]);
   messagesRef.current = messages;
@@ -143,9 +213,56 @@ export function ChatPanel() {
 
     try {
       if (isLoneUrl(raw)) {
-        await handleUrl(raw, (reply) =>
+        const result = await handleUrl(raw, (reply) =>
           setMessages((prev) => [...prev, reply]),
         );
+        // Only chase the "find related sites" follow-up if the tile actually
+        // landed. A failed handleUrl (canvas not ready, createShape threw)
+        // already pushed its own message; we don't want to also fire an
+        // agent turn against an empty canvas.
+        if (result.ok) {
+          // Skip the follow-up if no provider is configured — there's no
+          // useful turn to run, and surfacing the "/settings" hint here on
+          // every URL paste would be noisy. The header link is enough.
+          const haveProvider = Boolean(
+            selectAgentProviders(
+              useSettingsStore.getState().settings.providers,
+              useSettingsStore.getState().settings.defaultLlm,
+              useSettingsStore.getState().settings.defaultSearch,
+            ),
+          );
+          if (haveProvider) {
+            setMessages((prev) => [
+              ...prev,
+              {
+                id: nanoid(),
+                role: "assistant",
+                text: "Looking for related sites…",
+                createdAt: Date.now(),
+              },
+            ]);
+            const hostname = safeHostname(raw);
+            const seed = `Find 4-6 sites related to ${raw} (${hostname}). Return them as an exploration cluster (intent: explore).`;
+            // History passed to the agent ends with a synthetic user turn
+            // that is NOT added to the visible transcript — the user only
+            // sees "Looking for related sites…" then the agent's reply.
+            const history: ChatMessage[] = [
+              ...messagesRef.current,
+              {
+                id: nanoid(),
+                role: "user",
+                text: seed,
+                createdAt: Date.now(),
+              },
+            ];
+            await handleAgent(
+              history,
+              (reply) => setMessages((prev) => [...prev, reply]),
+              (updater) => setMessages((prev) => prev.map(updater)),
+              abortRef,
+            );
+          }
+        }
       } else {
         // History at submission time, including the user message we just
         // pushed. The agent needs both for context.
@@ -180,10 +297,40 @@ export function ChatPanel() {
       className="flex h-screen w-[360px] shrink-0 flex-col border-[#c9c8bd] border-r bg-[#f7f7f2] text-[#171814]"
     >
       <header className="shrink-0 border-[#c9c8bd] border-b px-4 py-3">
-        <h1 className="font-semibold text-[15px] text-[#171814]">Trail</h1>
+        <div className="flex items-center justify-between">
+          <h1 className="font-semibold text-[15px] text-[#171814]">Trail</h1>
+          <a
+            className="text-[11px] text-[#5d6256] hover:underline"
+            href="/settings"
+          >
+            Settings
+          </a>
+        </div>
         <p className="mt-0.5 text-[12px] text-[#5d6256]">
           paste a URL or type a question
         </p>
+        {rendererStatus === "checking" ? (
+          <p className="mt-1 flex items-center gap-1.5 text-[11px] text-[#5d6256]">
+            <span
+              aria-hidden="true"
+              className="inline-block h-1.5 w-1.5 rounded-full bg-[#a5a89c]"
+            />
+            checking renderer…
+          </p>
+        ) : null}
+        {rendererStatus === "offline" ? (
+          <p className="mt-1 flex items-center gap-1.5 text-[11px] text-[#7a5a1f]">
+            <span
+              aria-hidden="true"
+              className="inline-block h-1.5 w-1.5 rounded-full bg-[#c98a1a]"
+            />
+            renderer offline — screenshots disabled. Run{" "}
+            <code className="rounded bg-[#f0ecd9] px-1 py-px text-[10px]">
+              trail install-renderer
+            </code>
+            .
+          </p>
+        ) : null}
       </header>
 
       <div
@@ -329,6 +476,13 @@ async function handleAgent(
     return;
   }
 
+  // Eliminate the hydration race: if the store hasn't loaded from IndexedDB
+  // yet (e.g. user typed /canvas directly into the URL bar), await it before
+  // reading providers. hydrateSettings is idempotent so this is cheap once
+  // the store is already populated.
+  if (!useSettingsStore.getState().hydrated) {
+    await hydrateSettings();
+  }
   const { settings } = useSettingsStore.getState();
   const picked = selectAgentProviders(
     settings.providers,
@@ -443,7 +597,7 @@ async function handleAgent(
 async function handleUrl(
   url: string,
   push: (m: ChatMessage) => void,
-): Promise<void> {
+): Promise<{ ok: boolean }> {
   const editor = getCanvasEditor();
   if (!editor) {
     push({
@@ -452,7 +606,7 @@ async function handleUrl(
       text: "Canvas isn't ready yet — try again in a moment.",
       createdAt: Date.now(),
     });
-    return;
+    return { ok: false };
   }
 
   const { iframeable } = await probeUrl(url);
@@ -490,7 +644,7 @@ async function handleUrl(
       text: `Couldn't add ${hostname} to the canvas. See devtools for details.`,
       createdAt: Date.now(),
     });
-    return;
+    return { ok: false };
   }
 
   push({
@@ -500,6 +654,7 @@ async function handleUrl(
     createdAt: Date.now(),
     meta: { kind: "url-tile", nodeId: shapeId },
   });
+  return { ok: true };
 }
 
 function MessageCard({ message }: { message: ChatMessage }) {

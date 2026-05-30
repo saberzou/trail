@@ -11,6 +11,7 @@ import {
 } from "@testing-library/react";
 import React from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { SessionRequest } from "@/lib/agent/session";
 import { setCanvasEditor } from "@/lib/canvas/editorRef";
 import { wipeChat } from "@/lib/chat/persistence";
 import { useSettingsStore } from "@/lib/settings/store";
@@ -447,6 +448,121 @@ describe("ChatPanel", () => {
 
     expect(screen.getByText("tell me about ducks")).toBeInTheDocument();
     loadSpy.mockRestore();
+  });
+
+  it("hydrates the settings store on mount when not yet hydrated", async () => {
+    // Reset to the un-hydrated initial state so the effect's guard fires.
+    useSettingsStore.setState({
+      hydrated: false,
+      settings: { version: 1, providers: {} },
+    });
+    const storeMod = await import("@/lib/settings/store");
+    const hydrateSpy = vi.spyOn(storeMod, "hydrateSettings");
+
+    render(React.createElement(ChatPanel));
+
+    await waitFor(() => {
+      expect(hydrateSpy).toHaveBeenCalled();
+    });
+    hydrateSpy.mockRestore();
+  });
+
+  it("URL paste triggers a follow-up agent turn that seeds 'find related sites'", async () => {
+    configureProvider();
+    const capturedRequests: SessionRequest[] = [];
+    vi.mocked(runAgentTurn).mockImplementation(
+      async (_editor, req, _signal, callbacks) => {
+        capturedRequests.push(req);
+        callbacks?.onAssistantText?.("Found some related pages.");
+        callbacks?.onDone?.();
+      },
+    );
+
+    // Probe + health both return success here.
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => jsonResponse({ iframeable: false })),
+    );
+
+    render(React.createElement(ChatPanel));
+    const textarea = await screen.findByLabelText("Message input");
+    fireEvent.change(textarea, { target: { value: "https://example.com" } });
+    fireEvent.submit(textarea.closest("form")!);
+
+    // First the tile lands.
+    await waitFor(() => {
+      expect(editor.createShape).toHaveBeenCalledTimes(1);
+    });
+
+    // Then the follow-up agent turn runs.
+    await waitFor(() => {
+      expect(runAgentTurn).toHaveBeenCalledTimes(1);
+    });
+
+    const req = capturedRequests[0];
+    expect(req).toBeDefined();
+    const lastMsg = req.messages[req.messages.length - 1];
+    expect(lastMsg.role).toBe("user");
+    // Last message in history is the synthetic seed mentioning the URL.
+    expect(lastMsg.text).toMatch(/example\.com/);
+    expect(lastMsg.text.toLowerCase()).toMatch(/related|explore/);
+
+    // "Looking for related sites…" preamble is visible to the user.
+    expect(
+      await screen.findByText(/Looking for related sites/i),
+    ).toBeInTheDocument();
+  });
+
+  it("URL paste with NO provider configured creates the tile but skips the follow-up", async () => {
+    // clearProviders() ran in beforeEach.
+    render(React.createElement(ChatPanel));
+    const textarea = await screen.findByLabelText("Message input");
+    fireEvent.change(textarea, { target: { value: "https://example.com" } });
+    fireEvent.submit(textarea.closest("form")!);
+
+    await waitFor(() => {
+      expect(editor.createShape).toHaveBeenCalledTimes(1);
+    });
+    // No follow-up agent turn when there's no provider to run it.
+    expect(runAgentTurn).not.toHaveBeenCalled();
+  });
+
+  it("renderer health: shows no offline pill when /health responds 200", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url =
+          typeof input === "string" ? input : (input as URL).toString();
+        if (url.endsWith("/health")) return jsonResponse({ ok: true });
+        return jsonResponse({});
+      }),
+    );
+    render(React.createElement(ChatPanel));
+    // Settle the probe.
+    await waitFor(() => {
+      expect(screen.queryByText(/checking renderer/i)).not.toBeInTheDocument();
+    });
+    expect(screen.queryByText(/renderer offline/i)).not.toBeInTheDocument();
+  });
+
+  it("renderer health: shows offline pill when /health throws", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url =
+          typeof input === "string" ? input : (input as URL).toString();
+        if (url.endsWith("/health")) throw new Error("connection refused");
+        return jsonResponse({});
+      }),
+    );
+    render(React.createElement(ChatPanel));
+    expect(await screen.findByText(/renderer offline/i)).toBeInTheDocument();
+  });
+
+  it("header exposes a visible Settings link", async () => {
+    render(React.createElement(ChatPanel));
+    const link = await screen.findByRole("link", { name: /settings/i });
+    expect(link).toHaveAttribute("href", "/settings");
   });
 
   it("persists messages to IndexedDB", async () => {
