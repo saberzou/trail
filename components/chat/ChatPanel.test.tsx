@@ -180,6 +180,61 @@ describe("ChatPanel", () => {
     ).toBeInTheDocument();
   });
 
+  it("reports the per-turn tile count via onNode in the Done line", async () => {
+    configureProvider();
+    vi.mocked(runAgentTurn).mockImplementation(
+      async (_editor, _req, _signal, callbacks) => {
+        // Three tiles for THIS turn, no assistant text.
+        callbacks?.onNode?.();
+        callbacks?.onNode?.();
+        callbacks?.onNode?.();
+        callbacks?.onDone?.();
+      },
+    );
+
+    render(React.createElement(ChatPanel));
+    const textarea = await screen.findByLabelText("Message input");
+    fireEvent.change(textarea, { target: { value: "us visa application" } });
+    fireEvent.submit(textarea.closest("form")!);
+
+    expect(
+      await screen.findByText(/Done — added 3 tiles to the canvas\./i),
+    ).toBeInTheDocument();
+  });
+
+  it("singularizes the tile count when exactly one tile is added", async () => {
+    configureProvider();
+    vi.mocked(runAgentTurn).mockImplementation(
+      async (_editor, _req, _signal, callbacks) => {
+        callbacks?.onNode?.();
+        callbacks?.onDone?.();
+      },
+    );
+    render(React.createElement(ChatPanel));
+    const textarea = await screen.findByLabelText("Message input");
+    fireEvent.change(textarea, { target: { value: "one source please" } });
+    fireEvent.submit(textarea.closest("form")!);
+    expect(
+      await screen.findByText(/Done — added 1 tile to the canvas\./i),
+    ).toBeInTheDocument();
+  });
+
+  it("shows plain 'Done.' when the agent placed no tiles and emitted no text", async () => {
+    configureProvider();
+    vi.mocked(runAgentTurn).mockImplementation(
+      async (_editor, _req, _signal, callbacks) => {
+        callbacks?.onDone?.();
+      },
+    );
+    render(React.createElement(ChatPanel));
+    const textarea = await screen.findByLabelText("Message input");
+    fireEvent.change(textarea, { target: { value: "anything" } });
+    fireEvent.submit(textarea.closest("form")!);
+    // Bare "Done." (no tile line) — distinguishes the empty-turn case.
+    const dones = await screen.findAllByText(/^Done\.$/);
+    expect(dones.length).toBeGreaterThan(0);
+  });
+
   it("free-form text with NO provider configured shows the settings hint", async () => {
     // No providers seeded; clearProviders() ran in beforeEach.
     render(React.createElement(ChatPanel));

@@ -62,6 +62,31 @@ export function normalizeText(s: string): string {
 }
 
 /**
+ * Canonicalize a URL for keyed lookups so trivial agent typos
+ * (`#fragment`, trailing slash, host capitalization) don't read as
+ * source-not-fetched. We deliberately do NOT touch the query string —
+ * `?utm_*` params can change page semantics on real-world sites, and
+ * stripping them blindly is more dangerous than letting a strict miss
+ * surface as a retry. Falls through to the raw input for non-URLs so a
+ * malformed `sourceUrl` still hits the unfetched-source error path.
+ */
+export function urlKey(raw: string): string {
+  if (!raw) return raw;
+  try {
+    const u = new URL(raw);
+    u.hash = "";
+    if (u.pathname.endsWith("/") && u.pathname !== "/") {
+      u.pathname = u.pathname.slice(0, -1);
+    }
+    // URL constructor already lowercases the host; leave the path
+    // alone (case can be significant on Unix-style URL paths).
+    return u.toString();
+  } catch {
+    return raw;
+  }
+}
+
+/**
  * Validate a flow plan against the fetched-page corpus.
  *
  * - For "explore" intent: skip quote checks entirely. `sourceUrl` and
@@ -79,25 +104,28 @@ export function validateFlowPlan(
     return { ok: true };
   }
 
-  // Pre-normalize the corpus once. The keys stay verbatim (we look them up
-  // by the URL the agent passed); only the values get folded.
+  // Pre-normalize the corpus once. Keys are canonicalized so a step that
+  // passes `https://EXAMPLE.com/foo/#anchor` still matches a fetch of
+  // `https://example.com/foo`; only the values get folded.
   const normalizedCorpus = new Map<string, string>();
   for (const [url, text] of fetchedPages) {
-    normalizedCorpus.set(url, normalizeText(text));
+    normalizedCorpus.set(urlKey(url), normalizeText(text));
   }
 
   const errors: ValidationError[] = [];
   for (const step of plan.steps) {
     const quote = step.sourceQuote?.trim() ?? "";
-    if (!quote) {
-      errors.push({ kind: "quote-empty", stepId: step.id });
-      continue;
-    }
-    if (!step.sourceUrl) {
+    const hasQuote = quote.length > 0;
+    const hasSourceUrl = Boolean(step.sourceUrl);
+    // Collect both shape errors before continuing — short-circuiting after
+    // the first means the agent only learns about one problem per step per
+    // retry, wasting a round-trip.
+    if (!hasQuote) errors.push({ kind: "quote-empty", stepId: step.id });
+    if (!hasSourceUrl)
       errors.push({ kind: "missing-source-url", stepId: step.id });
-      continue;
-    }
-    const haystack = normalizedCorpus.get(step.sourceUrl);
+    if (!hasQuote || !hasSourceUrl) continue;
+
+    const haystack = normalizedCorpus.get(urlKey(step.sourceUrl));
     if (haystack === undefined) {
       errors.push({
         kind: "source-not-fetched",

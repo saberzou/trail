@@ -115,7 +115,7 @@ vi.mock("ai", async (orig) => {
 const SCRIPTED_FETCH_TEXT = new Map<string, string>();
 
 import type { SessionEvent } from "./session";
-import { runSession } from "./session";
+import { nodeFromStep, runSession } from "./session";
 
 async function collect(
   iter: AsyncIterable<SessionEvent>,
@@ -213,11 +213,16 @@ describe("runSession", () => {
       intent: "task",
       downgraded: false,
     });
-    const nodes = events.filter((e) => e.kind === "node");
+    const nodes = events.filter((e) => e.kind === "node") as Array<
+      Extract<SessionEvent, { kind: "node" }>
+    >;
     expect(nodes).toHaveLength(2);
-    expect((nodes[0] as { url: string }).url).toBe(
-      "https://example.gov/step-1",
-    );
+    expect(nodes[0].url).toBe("https://example.gov/step-1");
+    // Step 1 has requiresLogin:true → must ship as `link` so WebpageNode
+    // doesn't try to screenshot behind an auth wall. Step 2 has
+    // requiresLogin:false → stays `screenshot`.
+    expect(nodes[0].mode).toBe("link");
+    expect(nodes[1].mode).toBe("screenshot");
   });
 
   it("invalid quote on first call → agent retries; second call validates and emits nodes", async () => {
@@ -367,5 +372,31 @@ describe("runSession", () => {
     expect(downgradeMsg).toBeDefined();
     // Exactly one node from the (now-explore) plan.
     expect(events.filter((e) => e.kind === "node")).toHaveLength(1);
+  });
+});
+
+describe("nodeFromStep", () => {
+  it("maps requiresLogin:true → mode 'link'", () => {
+    const ev = nodeFromStep({
+      title: "Sign in to USCIS",
+      url: "https://my.uscis.gov/account",
+      instruction: "Sign in to your USCIS account.",
+      requiresLogin: true,
+    });
+    expect(ev.mode).toBe("link");
+    expect(ev.hostname).toBe("my.uscis.gov");
+    expect(ev.summary).toBe("Sign in to your USCIS account.");
+  });
+
+  it("maps requiresLogin:false → mode 'screenshot'", () => {
+    const ev = nodeFromStep({
+      title: "How to apply",
+      url: "https://www.example.gov/apply",
+      instruction: "Read the eligibility section.",
+      requiresLogin: false,
+    });
+    expect(ev.mode).toBe("screenshot");
+    // safeHostname strips the leading www.
+    expect(ev.hostname).toBe("example.gov");
   });
 });

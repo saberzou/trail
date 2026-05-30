@@ -4,6 +4,7 @@ import {
   type FlowPlan,
   type FlowStep,
   normalizeText,
+  urlKey,
   validateFlowPlan,
 } from "./flow-validator";
 
@@ -219,5 +220,123 @@ describe("validateFlowPlan", () => {
         "quote-not-in-source",
       ]);
     }
+  });
+
+  it("emits BOTH quote-empty AND missing-source-url for a step that lacks both", () => {
+    const pages = new Map([["https://a", "anything"]]);
+    const p = plan([
+      step({ id: "step-broken", sourceQuote: "", sourceUrl: "" }),
+    ]);
+    const result = validateFlowPlan(p, pages);
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      // Both errors must be reported so the agent can fix both in one
+      // retry instead of bouncing twice on the same step.
+      const kinds = result.errors
+        .filter((e) => "stepId" in e && e.stepId === "step-broken")
+        .map((e) => e.kind)
+        .sort();
+      expect(kinds).toEqual(["missing-source-url", "quote-empty"]);
+    }
+  });
+
+  it("quote longer than the fetched text reports quote-not-in-source (no crash)", () => {
+    const pages = new Map([["https://a", "tiny."]]);
+    const p = plan([
+      step({
+        id: "step-long",
+        sourceQuote: "this quote is dramatically longer than the page content",
+        sourceUrl: "https://a",
+      }),
+    ]);
+    const result = validateFlowPlan(p, pages);
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.errors[0]).toMatchObject({
+        kind: "quote-not-in-source",
+        stepId: "step-long",
+      });
+    }
+  });
+
+  it("collects all four error kinds across different steps in one pass", () => {
+    const pages = new Map([["https://a", "page text"]]);
+    const p = plan([
+      // quote-empty
+      step({ id: "s1", sourceQuote: "", sourceUrl: "https://a" }),
+      // missing-source-url
+      step({ id: "s2", sourceQuote: "page text", sourceUrl: "" }),
+      // source-not-fetched
+      step({ id: "s3", sourceQuote: "page text", sourceUrl: "https://b" }),
+      // quote-not-in-source
+      step({ id: "s4", sourceQuote: "not here", sourceUrl: "https://a" }),
+    ]);
+    const result = validateFlowPlan(p, pages);
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.errors.map((e) => e.kind).sort()).toEqual([
+        "missing-source-url",
+        "quote-empty",
+        "quote-not-in-source",
+        "source-not-fetched",
+      ]);
+    }
+  });
+
+  it("URL key normalization: trailing slash + #fragment + host case all match", () => {
+    const pages = new Map([["https://example.com/foo", "the canonical text"]]);
+    const p = plan([
+      step({
+        id: "s-url",
+        sourceQuote: "the canonical text",
+        sourceUrl: "https://EXAMPLE.com/foo/#section",
+      }),
+    ]);
+    expect(validateFlowPlan(p, pages)).toEqual({ ok: true });
+  });
+
+  it("URL key normalization: query string IS significant (not stripped)", () => {
+    // Two URLs differing only in ?q= are NOT the same page semantically —
+    // think a search results page vs the home page. We deliberately do
+    // not normalize the query.
+    const pages = new Map([["https://example.com/?q=foo", "results for foo"]]);
+    const p = plan([
+      step({
+        id: "s-q",
+        sourceQuote: "results for foo",
+        sourceUrl: "https://example.com/?q=bar",
+      }),
+    ]);
+    const result = validateFlowPlan(p, pages);
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.errors[0].kind).toBe("source-not-fetched");
+    }
+  });
+});
+
+describe("urlKey", () => {
+  it("strips fragment", () => {
+    expect(urlKey("https://example.com/x#anchor")).toBe(
+      "https://example.com/x",
+    );
+  });
+  it("collapses trailing slash on non-root paths", () => {
+    expect(urlKey("https://example.com/a/b/")).toBe("https://example.com/a/b");
+  });
+  it("preserves the bare root slash", () => {
+    expect(urlKey("https://example.com/")).toBe("https://example.com/");
+  });
+  it("lowercases the host", () => {
+    expect(urlKey("https://EXAMPLE.com/Foo")).toBe("https://example.com/Foo");
+  });
+  it("preserves path case", () => {
+    // Some servers serve case-sensitive paths (notably nginx + Unix).
+    // We must not lowercase the path or we'd cause spurious miss/hit.
+    expect(urlKey("https://example.com/CASE")).toContain("/CASE");
+  });
+  it("falls through on malformed input", () => {
+    expect(urlKey("not-a-url")).toBe("not-a-url");
+    expect(urlKey("")).toBe("");
   });
 });
