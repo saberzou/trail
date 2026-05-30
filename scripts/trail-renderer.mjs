@@ -5,13 +5,17 @@
 // Mac, local-first this is the same boundary as $HOME access. CORS is
 // restricted to the trail app's loopback origin.
 
-import { createHash } from "node:crypto";
 import { createReadStream } from "node:fs";
 import { mkdir, stat, writeFile } from "node:fs/promises";
 import http from "node:http";
 import os from "node:os";
 import path from "node:path";
 import { chromium } from "playwright";
+import {
+  cacheKey,
+  framingAllowed,
+  validateUrl,
+} from "../lib/renderer-parse.mjs";
 
 const PORT = Number(process.env.TRAIL_RENDERER_PORT ?? 3001);
 const HOST = "127.0.0.1";
@@ -19,7 +23,9 @@ const APP_PORT = Number(process.env.TRAIL_APP_PORT ?? 3000);
 const CACHE_DIR = path.join(os.homedir(), ".trail", "cache", "screenshots");
 const CACHE_TTL_MS = 24 * 60 * 60 * 1000;
 const SHOT_TIMEOUT_MS = 15_000;
+const SCREENSHOT_TIMEOUT_MS = 5_000;
 const PROBE_TIMEOUT_MS = 10_000;
+const SHUTDOWN_TIMEOUT_MS = 5_000;
 const MAX_BODY_BYTES = 16 * 1024;
 const ALLOWED_ORIGINS = new Set([
   `http://localhost:${APP_PORT}`,
@@ -71,23 +77,6 @@ async function readJsonBody(req) {
   }
 }
 
-function validateUrl(input) {
-  if (typeof input !== "string") return null;
-  try {
-    const u = new URL(input);
-    if (u.protocol !== "http:" && u.protocol !== "https:") return null;
-    return u.toString();
-  } catch {
-    return null;
-  }
-}
-
-function cacheKey(url, viewport) {
-  const hash = createHash("sha256");
-  hash.update(`${url}:${viewport.width}x${viewport.height}`);
-  return hash.digest("hex");
-}
-
 function streamFile(res, filePath, size) {
   res.statusCode = 200;
   res.setHeader("Content-Type", "image/png");
@@ -96,30 +85,11 @@ function streamFile(res, filePath, size) {
   createReadStream(filePath).pipe(res);
 }
 
-/**
- * Parse a CSP header value and decide whether the response can be framed by
- * our app origin. Returns null when no frame-ancestors directive is present
- * (i.e. CSP is silent on framing, defer to other signals).
- */
-function frameAncestorsAllows(cspValue, appOrigins) {
-  const directives = cspValue.split(";").map((d) => d.trim());
-  for (const d of directives) {
-    if (!/^frame-ancestors\b/i.test(d)) continue;
-    const sources = d.split(/\s+/).slice(1);
-    if (sources.length === 0) return false; // empty → blocks everyone
-    for (const src of sources) {
-      const s = src.toLowerCase();
-      if (s === "*" || s === "'self'") return true;
-      for (const origin of appOrigins) {
-        if (s === origin) return true;
-      }
-    }
-    return false;
-  }
-  return null;
-}
-
 async function handleScreenshot(req, res, browser) {
+  // CORS goes first — even on early-exit error paths the browser needs
+  // these headers, otherwise it surfaces "CORS error" instead of the
+  // real status code.
+  applyCors(req, res);
   if (!isAllowedOrigin(req)) {
     sendJson(res, 403, { error: "forbidden-origin" });
     return;
@@ -143,11 +113,12 @@ async function handleScreenshot(req, res, browser) {
   const key = cacheKey(url, viewport);
   const file = path.join(CACHE_DIR, `${key}.png`);
 
-  applyCors(req, res);
-
   try {
     const st = await stat(file);
-    if (Date.now() - st.mtimeMs < CACHE_TTL_MS) {
+    const delta = Date.now() - st.mtimeMs;
+    // Require a non-negative delta too — a future-dated mtime (clock
+    // skew, restored backup) would otherwise look fresh forever.
+    if (delta >= 0 && delta < CACHE_TTL_MS) {
       streamFile(res, file, st.size);
       return;
     }
@@ -155,11 +126,18 @@ async function handleScreenshot(req, res, browser) {
     // cache miss — fall through
   }
 
-  const context = await browser.newContext({ viewport });
+  // Declared outside the try so the `finally` block can guard against
+  // `newContext` itself throwing (browser closed mid-request).
+  let context;
   try {
+    context = await browser.newContext({ viewport });
     const page = await context.newPage();
     await page.goto(url, { timeout: SHOT_TIMEOUT_MS, waitUntil: "load" });
-    const png = await page.screenshot({ fullPage: false, type: "png" });
+    const png = await page.screenshot({
+      fullPage: false,
+      type: "png",
+      timeout: SCREENSHOT_TIMEOUT_MS,
+    });
     await writeFile(file, png);
     res.statusCode = 200;
     res.setHeader("Content-Type", "image/png");
@@ -172,11 +150,12 @@ async function handleScreenshot(req, res, browser) {
       message: String(err?.message ?? err),
     });
   } finally {
-    await context.close().catch(() => {});
+    if (context) await context.close().catch(() => {});
   }
 }
 
 async function handleProbe(req, res) {
+  applyCors(req, res);
   if (!isAllowedOrigin(req)) {
     sendJson(res, 403, { error: "forbidden-origin" });
     return;
@@ -194,8 +173,6 @@ async function handleProbe(req, res) {
     return;
   }
 
-  applyCors(req, res);
-
   const appOrigins = [...ALLOWED_ORIGINS].map((o) => o.toLowerCase());
   try {
     const r = await fetch(url, {
@@ -203,17 +180,7 @@ async function handleProbe(req, res) {
       redirect: "follow",
       signal: AbortSignal.timeout(PROBE_TIMEOUT_MS),
     });
-    let iframeable = true;
-    const xfo = r.headers.get("x-frame-options");
-    if (xfo) {
-      const v = xfo.toUpperCase();
-      if (v.includes("DENY") || v.includes("SAMEORIGIN")) iframeable = false;
-    }
-    const csp = r.headers.get("content-security-policy");
-    if (csp) {
-      const allowed = frameAncestorsAllows(csp, appOrigins);
-      if (allowed === false) iframeable = false;
-    }
+    const iframeable = framingAllowed(r.headers, appOrigins);
     sendJson(res, 200, { iframeable });
   } catch (err) {
     sendJson(res, 200, {
@@ -237,6 +204,9 @@ function handleOptions(req, res) {
 async function makeHandler(browser) {
   return async (req, res) => {
     try {
+      // Dispatcher-level CORS so every response (including 404 and
+      // unhandled errors) carries the right headers.
+      applyCors(req, res);
       const url = new URL(req.url || "/", `http://${HOST}:${PORT}`);
       const method = req.method || "GET";
 
@@ -285,9 +255,21 @@ async function main() {
 
   const shutdown = async (sig) => {
     console.log(`[trail-renderer] ${sig} — shutting down`);
-    await new Promise((resolve) => server.close(() => resolve()));
-    await browser.close().catch(() => {});
-    process.exit(0);
+    // Force-exit safety net: if server.close or browser.close hang
+    // (e.g. SIGTERM landed during a 15s page.goto) we bail rather
+    // than ignore the signal forever.
+    const timer = setTimeout(() => {
+      console.error("[trail-renderer] shutdown timeout — force-exiting");
+      process.exit(1);
+    }, SHUTDOWN_TIMEOUT_MS);
+    timer.unref();
+    try {
+      await new Promise((resolve) => server.close(() => resolve()));
+      await browser.close().catch(() => {});
+    } finally {
+      clearTimeout(timer);
+      process.exit(0);
+    }
   };
   process.on("SIGTERM", () => void shutdown("SIGTERM"));
   process.on("SIGINT", () => void shutdown("SIGINT"));

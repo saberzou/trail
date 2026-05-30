@@ -57,6 +57,11 @@ export async function wipeChat(): Promise<void> {
     const req = indexedDB.deleteDatabase(DB_NAME);
     req.onsuccess = () => resolve();
     req.onerror = () => reject(req.error);
-    req.onblocked = () => resolve();
+    req.onblocked = () => {
+      console.warn(
+        "[trail] wipeChat blocked — another tab holds the DB. Close other tabs and try again.",
+      );
+      resolve();
+    };
   });
 }

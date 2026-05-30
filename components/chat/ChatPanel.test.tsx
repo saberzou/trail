@@ -216,6 +216,102 @@ describe("ChatPanel", () => {
     });
   });
 
+  it("Ctrl+Enter also submits the input", async () => {
+    render(React.createElement(ChatPanel));
+    const textarea = await screen.findByLabelText("Message input");
+    fireEvent.change(textarea, { target: { value: "https://example.com" } });
+    fireEvent.keyDown(textarea, { key: "Enter", ctrlKey: true });
+    await waitFor(() => {
+      expect(editor.createShape).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  it("a second submit while a turn is in-flight is dropped", async () => {
+    // Hold the probe response open so the first turn never finishes.
+    let resolveFirstProbe: (r: Response) => void = () => {};
+    const fetchMock = vi.fn(
+      () =>
+        new Promise<Response>((res) => {
+          resolveFirstProbe = res;
+        }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(React.createElement(ChatPanel));
+    const textarea = await screen.findByLabelText("Message input");
+    fireEvent.change(textarea, { target: { value: "https://first.example" } });
+    fireEvent.submit(textarea.closest("form")!);
+
+    // Sending state should be active.
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: /sending/i })).toBeDisabled();
+    });
+
+    // Try to submit a second URL while the first is still in-flight.
+    fireEvent.change(textarea, {
+      target: { value: "https://second.example" },
+    });
+    fireEvent.submit(textarea.closest("form")!);
+
+    // Resolve the first probe so React unmounts cleanly.
+    await act(async () => {
+      resolveFirstProbe(jsonResponse({ iframeable: false }));
+    });
+    await waitFor(() => {
+      expect(editor.createShape).toHaveBeenCalledTimes(1);
+    });
+    // Only the first URL made it to createShape. ChatPanel passes the
+    // raw (trimmed) text — it doesn't run the input through the URL
+    // constructor, so no trailing slash normalization happens here.
+    expect(editor.createShape.mock.calls[0][0].props.url).toBe(
+      "https://first.example",
+    );
+  });
+
+  it("shows a friendly message when the canvas editor is null", async () => {
+    setCanvasEditor(null);
+    render(React.createElement(ChatPanel));
+    const textarea = await screen.findByLabelText("Message input");
+    fireEvent.change(textarea, { target: { value: "https://example.com" } });
+    fireEvent.submit(textarea.closest("form")!);
+    expect(await screen.findByText(/Canvas isn't ready/i)).toBeInTheDocument();
+    // No probe issued, no shape created.
+    expect(editor.createShape).not.toHaveBeenCalled();
+  });
+
+  it("hydration race: messages submitted before loadChat resolves are preserved", async () => {
+    // Replace fake-indexeddb's loadChat by intercepting at the module
+    // boundary. We delay the resolution to simulate a slow first read,
+    // submit during the wait, then resolve and assert the user message
+    // wasn't clobbered.
+    const persistence = await import("@/lib/chat/persistence");
+    let resolveLoad: (h: { version: 1; messages: [] }) => void = () => {};
+    const loadSpy = vi.spyOn(persistence, "loadChat").mockImplementation(
+      () =>
+        new Promise((res) => {
+          resolveLoad = res;
+        }),
+    );
+
+    render(React.createElement(ChatPanel));
+    const textarea = await screen.findByLabelText("Message input");
+    fireEvent.change(textarea, { target: { value: "tell me about ducks" } });
+    fireEvent.submit(textarea.closest("form")!);
+
+    // Wait for the placeholder reply to appear (local state has messages now).
+    await screen.findByText(/master agent arrives/i);
+
+    // Now resolve loadChat with empty history. The component's functional
+    // setMessages guards against overwriting when messages already exist.
+    await act(async () => {
+      resolveLoad({ version: 1, messages: [] });
+    });
+
+    // The user message should still be there.
+    expect(screen.getByText("tell me about ducks")).toBeInTheDocument();
+    loadSpy.mockRestore();
+  });
+
   it("persists messages to IndexedDB", async () => {
     render(React.createElement(ChatPanel));
     const textarea = await screen.findByLabelText("Message input");
