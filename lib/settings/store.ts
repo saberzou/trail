@@ -53,7 +53,30 @@ export const useSettingsStore = create<State>()((set, get) => ({
   },
 }));
 
+// Tracks an in-flight hydration so concurrent callers (e.g. /canvas mounting
+// ChatPanel while the user also opens /settings in a new tab) share the same
+// disk read and resolve on the same setState. Cleared once the promise
+// settles so a subsequent rehydrate (after wipeAll, say) still runs.
+let hydratePromise: Promise<void> | null = null;
+
+/**
+ * Idempotent: returns immediately if the store is already hydrated, and
+ * coalesces concurrent calls into a single disk read. Safe to call from
+ * every page that needs settings without worrying about double-loads.
+ */
 export async function hydrateSettings(): Promise<void> {
-  const loaded = await loadEncrypted<TrailSettings>();
-  useSettingsStore.setState({ settings: loaded ?? initial, hydrated: true });
+  if (useSettingsStore.getState().hydrated) return;
+  if (hydratePromise) return hydratePromise;
+  hydratePromise = (async () => {
+    try {
+      const loaded = await loadEncrypted<TrailSettings>();
+      useSettingsStore.setState({
+        settings: loaded ?? initial,
+        hydrated: true,
+      });
+    } finally {
+      hydratePromise = null;
+    }
+  })();
+  return hydratePromise;
 }
