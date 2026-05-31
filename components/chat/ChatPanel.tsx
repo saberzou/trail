@@ -9,7 +9,7 @@ import {
   useRef,
   useState,
 } from "react";
-import { createShapeId } from "tldraw";
+import { createShapeId, type TLShapeId } from "tldraw";
 import type { SessionRequest } from "@/lib/agent/session";
 import { getCanvasEditor } from "@/lib/canvas/editorRef";
 import { runAgentTurn } from "@/lib/chat/agentBridge";
@@ -260,6 +260,10 @@ export function ChatPanel() {
               (reply) => setMessages((prev) => [...prev, reply]),
               (updater) => setMessages((prev) => prev.map(updater)),
               abortRef,
+              // Anchor the radial cluster around the tile we just
+              // created, not the viewport center. The shape id lets
+              // runSessionTurn bind arrow spokes back to it.
+              { pos: result.position, shapeId: result.shapeId },
             );
           }
         }
@@ -459,11 +463,22 @@ function selectAgentProviders(
   return search ? { ...picked, ...search } : picked;
 }
 
+type HandleAgentAnchor = {
+  /** Page-space center the agent should radiate explore-cluster tiles
+   * around. Free-form chat omits this and falls back to viewport center. */
+  pos?: { x: number; y: number };
+  /** Shape id of the existing tile we're radiating around (e.g. the
+   * URL-paste tile). When supplied, explore-intent flows draw arrow
+   * spokes from this shape to each related tile. */
+  shapeId?: TLShapeId;
+};
+
 async function handleAgent(
   history: ChatMessage[],
   push: (m: ChatMessage) => void,
   updateMessage: (updater: (m: ChatMessage) => ChatMessage) => void,
   abortRef: { current: AbortController | null },
+  anchor?: HandleAgentAnchor,
 ): Promise<void> {
   const editor = getCanvasEditor();
   if (!editor) {
@@ -563,7 +578,8 @@ async function handleAgent(
       );
     },
     onFlowMeta: () => {
-      // PR2c will use this to bias layout topology.
+      // Layout topology is selected inside runSessionTurn from the
+      // intent on this event; nothing to do here.
     },
     onNode: () => {
       tileCount += 1;
@@ -574,6 +590,8 @@ async function handleAgent(
     onDone: () => {
       // No-op — tileCount accumulates in onNode.
     },
+    anchorPos: anchor?.pos,
+    anchorShapeId: anchor?.shapeId,
   });
 
   if (lastError) {
@@ -594,10 +612,21 @@ async function handleAgent(
   }
 }
 
+type HandleUrlResult =
+  | { ok: false }
+  | {
+      ok: true;
+      shapeId: TLShapeId;
+      /** Center (page-space) of the just-created tile. Used as the anchor
+       * for the follow-up "find related sites" radial cluster so the new
+       * ring forms AROUND this tile, not at the viewport center. */
+      position: { x: number; y: number };
+    };
+
 async function handleUrl(
   url: string,
   push: (m: ChatMessage) => void,
-): Promise<{ ok: boolean }> {
+): Promise<HandleUrlResult> {
   const editor = getCanvasEditor();
   if (!editor) {
     push({
@@ -654,7 +683,11 @@ async function handleUrl(
     createdAt: Date.now(),
     meta: { kind: "url-tile", nodeId: shapeId },
   });
-  return { ok: true };
+  return {
+    ok: true,
+    shapeId,
+    position: { x: center.x, y: center.y },
+  };
 }
 
 function MessageCard({ message }: { message: ChatMessage }) {

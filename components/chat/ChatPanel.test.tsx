@@ -470,15 +470,23 @@ describe("ChatPanel", () => {
   it("URL paste triggers a follow-up agent turn that seeds 'find related sites'", async () => {
     configureProvider();
     const capturedRequests: SessionRequest[] = [];
+    type RunCallbacks = Parameters<typeof runAgentTurn>[3];
+    const capturedCallbacks: RunCallbacks[] = [];
     vi.mocked(runAgentTurn).mockImplementation(
       async (_editor, req, _signal, callbacks) => {
         capturedRequests.push(req);
+        capturedCallbacks.push(callbacks);
         callbacks?.onAssistantText?.("Found some related pages.");
         callbacks?.onDone?.();
       },
     );
 
-    // Probe + health both return success here.
+    // Probe + health both return success here. Position the viewport at a
+    // distinctive center so we can verify the anchor was captured from it
+    // rather than left undefined.
+    editor.getViewportPageBounds.mockReturnValue({
+      center: { x: 500, y: 700 },
+    });
     vi.stubGlobal(
       "fetch",
       vi.fn(async () => jsonResponse({ iframeable: false })),
@@ -506,6 +514,15 @@ describe("ChatPanel", () => {
     // Last message in history is the synthetic seed mentioning the URL.
     expect(lastMsg.text).toMatch(/example\.com/);
     expect(lastMsg.text.toLowerCase()).toMatch(/related|explore/);
+
+    // The follow-up agent turn was anchored around the just-created tile,
+    // not left at undefined / viewport-fallback default. Both anchorPos
+    // and anchorShapeId should be forwarded so the radial cluster forms
+    // around the URL tile.
+    const cb = capturedCallbacks[0];
+    expect(cb?.anchorPos).toEqual({ x: 500, y: 700 });
+    expect(cb?.anchorShapeId).toBeDefined();
+    expect(typeof cb?.anchorShapeId).toBe("string");
 
     // "Looking for related sites…" preamble is visible to the user.
     expect(
