@@ -42,7 +42,7 @@ export default function SettingsPage() {
 
       <div className="mx-auto flex max-w-2xl flex-col gap-8 px-6 py-10">
         <header className="space-y-3">
-          <p className="font-medium text-[#5f6f52] text-sm uppercase tracking-[0.18em]">
+          <p className="font-medium text-primary text-sm uppercase tracking-[0.18em]">
             Trail Settings
           </p>
           <div className="space-y-2">

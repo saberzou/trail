@@ -55,11 +55,11 @@ export function TrailCanvas({ trailId }: { trailId: string }) {
   }, [trailId]);
 
   if (!initial) {
-    return <div className="absolute inset-0 bg-[#f4f1e8]" />;
+    return <div className="absolute inset-0 bg-muted" />;
   }
 
   return (
-    <div className="absolute inset-0 bg-[#f4f1e8]">
+    <div className="absolute inset-0 bg-muted">
       <Tldraw
         components={TLDRAW_COMPONENTS}
         shapeUtils={[WebpageNodeUtil]}

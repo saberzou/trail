@@ -330,22 +330,22 @@ export function ChatPanel({
           paste a URL or type a question
         </p>
         {rendererStatus === "checking" ? (
-          <p className="mt-1 flex items-center gap-1.5 text-[11px] text-[#5d6256]">
+          <p className="mt-1 flex items-center gap-1.5 text-[11px] text-muted-foreground">
             <span
               aria-hidden="true"
-              className="inline-block h-1.5 w-1.5 rounded-full bg-[#a5a89c]"
+              className="inline-block h-1.5 w-1.5 rounded-full bg-muted-foreground/60"
             />
             checking renderer…
           </p>
         ) : null}
         {rendererStatus === "offline" ? (
-          <p className="mt-1 flex items-center gap-1.5 text-[11px] text-[#7a5a1f]">
+          <p className="mt-1 flex items-center gap-1.5 text-[11px] text-amber-700 dark:text-amber-500">
             <span
               aria-hidden="true"
-              className="inline-block h-1.5 w-1.5 rounded-full bg-[#c98a1a]"
+              className="inline-block h-1.5 w-1.5 rounded-full bg-amber-500"
             />
             renderer offline — screenshots disabled. Run{" "}
-            <code className="rounded bg-[#f0ecd9] px-1 py-px text-[10px]">
+            <code className="rounded bg-amber-500/15 px-1 py-px text-[10px]">
               trail install-renderer
             </code>
             .
