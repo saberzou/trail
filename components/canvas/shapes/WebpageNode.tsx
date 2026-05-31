@@ -8,6 +8,17 @@ import { getCanvasEditor } from "@/lib/canvas/editorRef";
 const RENDERER_BASE_URL =
   process.env.NEXT_PUBLIC_TRAIL_RENDERER_URL ?? "http://127.0.0.1:3001";
 
+/**
+ * Google's S2 favicon service: no backend, no API key, served as a plain
+ * image. We use it to visually differentiate tiles even when the screenshot
+ * sidecar is offline. The CSP `img-src https:` rule already covers it.
+ */
+function faviconUrl(hostname: string): string {
+  return `https://www.google.com/s2/favicons?domain=${encodeURIComponent(
+    hostname,
+  )}&sz=64`;
+}
+
 type WebpageNodeProps = { shape: WebpageNodeShape };
 
 export function WebpageNode({ shape }: WebpageNodeProps) {
@@ -33,6 +44,7 @@ export function WebpageNode({ shape }: WebpageNodeProps) {
       style={{ width: w, height: h }}
     >
       <header className="flex h-9 shrink-0 items-center gap-2 border-[#ece9dd] border-b bg-[#f7f7f2] px-3">
+        <Favicon hostname={hostname} />
         <span
           className="min-w-0 flex-1 truncate text-[13px] font-medium text-[#171814]"
           title={title || hostname}
@@ -208,16 +220,18 @@ function ScreenshotImg({ url, onError }: { url: string; onError: () => void }) {
 function LinkCard({
   hostname,
   summary,
-  url,
 }: {
   hostname: string;
   // `title` is intentionally not consumed — the article header already
   // displays it; repeating it in the card body crowds the 320×220 default
-  // tile and pushes the action button below the fold. Kept on the prop
-  // list of the parent caller so the rest of the renderer stays simple.
+  // tile. Kept on the prop list of the parent caller so the rest of the
+  // renderer stays simple.
   title?: string;
   summary?: string;
-  url: string;
+  // `url` is also intentionally not consumed — the header's Open ↗ link is
+  // the single Open affordance. A second Open button in the body was the
+  // "big black blob" the user flagged.
+  url?: string;
 }) {
   return (
     <div className="flex h-full w-full flex-col gap-1.5 bg-[#f7f7f2] px-4 py-3">
@@ -225,22 +239,33 @@ function LinkCard({
         {hostname}
       </p>
       {summary ? (
-        <p className="line-clamp-3 text-[12px] leading-snug text-[#3a3d35]">
+        <p className="line-clamp-6 text-[12px] leading-snug text-[#3a3d35]">
           {summary}
         </p>
       ) : (
         <p className="text-[12px] text-[#8a8d80]">No preview available.</p>
       )}
-      <a
-        aria-label={`Open ${hostname} in new tab`}
-        className="mt-auto inline-flex w-fit items-center gap-1 rounded-md bg-[#273321] px-2.5 py-1 text-[11px] font-medium text-white hover:bg-[#36452d]"
-        href={url}
-        onPointerDown={(e) => e.stopPropagation()}
-        rel="noopener noreferrer"
-        target="_blank"
-      >
-        Open {"↗"}
-      </a>
     </div>
+  );
+}
+
+/**
+ * Tiny 16×16 favicon. If the image fails to load (offline, blocked, 404),
+ * we hide it entirely rather than showing a broken-image glyph so the
+ * header layout stays clean.
+ */
+function Favicon({ hostname }: { hostname: string }) {
+  const [hidden, setHidden] = useState(false);
+  if (!hostname || hidden) return null;
+  return (
+    // biome-ignore lint/performance/noImgElement: tldraw shape headers render inside the canvas, not the Next.js page tree.
+    <img
+      alt=""
+      aria-hidden="true"
+      className="h-4 w-4 shrink-0 rounded-sm"
+      draggable={false}
+      onError={() => setHidden(true)}
+      src={faviconUrl(hostname)}
+    />
   );
 }

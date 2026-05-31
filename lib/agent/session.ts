@@ -192,8 +192,14 @@ For EXPLORE intent, \`sourceQuote\` and \`sourceUrl\` can be empty strings.
 
 Workflow:
 1. ${search}${opts.hasSearch ? " Call web_search 1-3 times to find sources." : ""}
-2. Call \`fetch_url\` on the 2-5 most promising URLs.
-3. Call \`build_flow\` with the structured plan. Set \`requires\` to the IDs of prior steps that must complete first. Mark steps that need login (USCIS, bank portals, government forms) as \`requiresLogin: true\`.
+2. Call \`fetch_url\` on 2-5 promising URLs. If fetch_url fails for some or all URLs, that's OK — continue with whatever you got, OR with your prior knowledge if you got nothing.
+3. ALWAYS finish the turn by calling \`build_flow\`. This is non-negotiable: tiles only appear on the user's canvas via build_flow. A plain-text reply alone produces nothing the user can act on.
+
+If fetch_url succeeded for at least one source: use intent "task" or "explore" as appropriate, and quote verbatim from the fetched text in \`sourceQuote\` (with the matching \`sourceUrl\`).
+
+If fetch_url failed for ALL sources: use intent "explore" and call build_flow with empty \`sourceUrl\` and \`sourceQuote\` strings on every step. You can still provide 4-8 useful URLs based on prior knowledge. Don't give up and respond in plain chat text — the user can't act on text without tiles.
+
+Set \`requires\` to the IDs of prior steps that must complete first. Mark steps that need login (USCIS, bank portals, government forms) as \`requiresLogin: true\`.
 
 Be concise. 3-7 steps for task; 4-8 tiles for explore. Each \`instruction\` is 1-3 sentences. Quotes should be short (one sentence or less) and copy-pasted from the fetched page.${ctx}`;
 }

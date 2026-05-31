@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { type Editor, Tldraw } from "tldraw";
+import { type Editor, type TLUiComponents, Tldraw } from "tldraw";
 import "tldraw/tldraw.css";
 import { WebpageNodeUtil } from "@/components/canvas/shapes/WebpageNodeUtil";
 import { setCanvasEditor } from "@/lib/canvas/editorRef";
@@ -12,6 +12,23 @@ import {
   seedLastHash,
 } from "@/lib/canvas/persistence";
 import { createDebouncedSaver } from "@/lib/idb/saver";
+
+/**
+ * Trail is graph navigation, not a drawing app. We hide tldraw's StylePanel
+ * (top-right color / size / fill picker) because Trail tiles aren't user-
+ * styled shapes — the picker was just clutter that confused first-time
+ * users. The default tool is set to "hand" in onMount for the same reason:
+ * the user should drag to pan without first switching tools.
+ *
+ * The bottom toolbar (cursor, hand, draw, eraser, arrow, text, sticky,
+ * image, square) is intentionally NOT hidden here: hiding the entire
+ * Toolbar is too coarse — users still benefit from select for arranging
+ * tiles, and sticky/text/draw for jotting notes alongside the flow. If we
+ * ever want a tighter palette we'll need a custom Toolbar override.
+ */
+const TLDRAW_COMPONENTS: TLUiComponents = {
+  StylePanel: null,
+};
 
 export function TrailCanvas() {
   // Gate the <Tldraw> mount until we've checked IndexedDB so we don't race the
@@ -44,6 +61,7 @@ export function TrailCanvas() {
   return (
     <div className="absolute inset-0 bg-[#f4f1e8]">
       <Tldraw
+        components={TLDRAW_COMPONENTS}
         shapeUtils={[WebpageNodeUtil]}
         onMount={(editor: Editor) => {
           setCanvasEditor(editor);
@@ -71,6 +89,12 @@ export function TrailCanvas() {
               console.error("[trail] failed to load canvas snapshot", err);
             }
           }
+
+          // Default to the hand tool so a left-click-drag pans the canvas.
+          // Trail is graph navigation; the user shouldn't have to switch
+          // tools just to move around. We do this AFTER snapshot load so
+          // any persisted UI state can't immediately swap us back.
+          editor.setCurrentTool("hand");
 
           const saver = createDebouncedSaver(
             () => editor.store.getStoreSnapshot(),

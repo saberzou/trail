@@ -351,120 +351,140 @@ export function makeFetchUrlTool(opts: MakeFetchUrlToolOpts = {}) {
   return tool({
     description: "Fetch a URL and extract its main readable content.",
     inputSchema: z.object({ url: z.string().url() }),
-    execute: async ({ url }) => {
-      let currentUrl: URL;
+    execute: async (input) => {
       try {
-        currentUrl = new URL(url);
-      } catch {
-        throw new Error("blocked: invalid URL");
-      }
-
-      let headers: Record<string, string> = {
-        "user-agent": "Mozilla/5.0 TrailBot/1.0",
-        accept: "text/html,application/xhtml+xml",
-        ...(initialHeaders ?? {}),
-      };
-      const signal = AbortSignal.timeout(timeoutMs);
-
-      let finalResponse: Response | null = null;
-      let finalUrl = currentUrl;
-      // The dispatcher used for the most recent hop. We keep it alive past
-      // the loop so `readCappedBody` can drain the final body stream — undici
-      // `Agent.close()` aborts in-flight requests, so closing mid-stream
-      // truncates the body. Prior hops' dispatchers are closed inside the
-      // loop as soon as the next hop's URL is validated.
-      let dispatcher: Agent | undefined;
-
-      try {
-        for (let hop = 0; hop <= maxRedirects; hop++) {
-          const pinned = await assertSafeUrl(currentUrl, lookup);
-
-          // Close the dispatcher from the previous hop now that we've
-          // validated the next URL — its body (a 3xx response) has already
-          // been read by the time we got here.
-          if (dispatcher) {
-            await dispatcher.close().catch(() => {});
-            dispatcher = undefined;
-          }
-
-          // Build an IP-pinned dispatcher so DNS rebinding can't swap the
-          // hostname to a private address between our resolve and connect.
-          dispatcher = new Agent({
-            connect: {
-              lookup: (
-                _host: string,
-                _options: unknown,
-                cb: (
-                  err: NodeJS.ErrnoException | null,
-                  address: string,
-                  family: number,
-                ) => void,
-              ) => {
-                cb(null, pinned.address, pinned.family);
-              },
-            },
-          });
-
-          const res = await f(currentUrl.toString(), {
-            method: "GET",
-            headers,
-            redirect: "manual",
-            signal,
-            // Node's fetch (undici-backed) accepts a `dispatcher` on init.
-            // The browser `fetch` type doesn't include it, but we're a server
-            // tool — cast through.
-            ...({ dispatcher } as { dispatcher: unknown }),
-          });
-
-          if (res.status >= 300 && res.status < 400) {
-            const loc = res.headers.get("location");
-            if (!loc) {
-              throw new Error(`fetch ${res.status} without location`);
-            }
-            if (hop >= maxRedirects) {
-              throw new Error("blocked: too many redirects");
-            }
-            const next = new URL(loc, currentUrl);
-            const sameOrigin = next.origin === currentUrl.origin;
-            if (!sameOrigin) {
-              headers = stripCredentialHeaders(headers);
-            }
-            currentUrl = next;
-            continue;
-          }
-
-          if (!res.ok) {
-            throw new Error(`fetch ${res.status}`);
-          }
-          finalResponse = res;
-          finalUrl = currentUrl;
-          break;
-        }
-
-        if (!finalResponse) {
-          // Loop ended without a non-redirect response — treat as redirect cap.
-          throw new Error("blocked: too many redirects");
-        }
-
-        const html = await readCappedBody(finalResponse, cap, signal);
-        const dom = new JSDOM(html, { url: finalUrl.toString() });
-        const article = new Readability(dom.window.document).parse();
-        if (article?.textContent) {
-          return {
-            title: article.title || finalUrl.toString(),
-            text: article.textContent.slice(0, 4000),
-          };
-        }
-        const $ = cheerio.load(html);
-        $("script, style, noscript").remove();
-        return {
-          title: $("title").text() || finalUrl.toString(),
-          text: $("body").text().replace(/\s+/g, " ").slice(0, 4000),
-        };
-      } finally {
-        // Body has been fully drained (or we're erroring out); safe to close.
-        await dispatcher?.close().catch(() => {});
+        return await fetchUrlImpl(input.url);
+      } catch (err) {
+        // Surface why fetch_url failed in server logs so we can debug
+        // "the agent can't fetch anything" reports — without this trace,
+        // SSRF false positives / DNS hiccups / upstream 5xxs all just
+        // appear as a generic tool error to the model and silence on
+        // our side. The throw is preserved so the AI SDK still reports
+        // the error back to the model (which can decide to retry or
+        // fall back to prior knowledge).
+        console.error("[trail] fetch_url failed", {
+          url: input.url,
+          error:
+            err instanceof Error ? `${err.name}: ${err.message}` : String(err),
+        });
+        throw err;
       }
     },
   });
+
+  async function fetchUrlImpl(url: string) {
+    let currentUrl: URL;
+    try {
+      currentUrl = new URL(url);
+    } catch {
+      throw new Error("blocked: invalid URL");
+    }
+
+    let headers: Record<string, string> = {
+      "user-agent": "Mozilla/5.0 TrailBot/1.0",
+      accept: "text/html,application/xhtml+xml",
+      ...(initialHeaders ?? {}),
+    };
+    const signal = AbortSignal.timeout(timeoutMs);
+
+    let finalResponse: Response | null = null;
+    let finalUrl = currentUrl;
+    // The dispatcher used for the most recent hop. We keep it alive past
+    // the loop so `readCappedBody` can drain the final body stream — undici
+    // `Agent.close()` aborts in-flight requests, so closing mid-stream
+    // truncates the body. Prior hops' dispatchers are closed inside the
+    // loop as soon as the next hop's URL is validated.
+    let dispatcher: Agent | undefined;
+
+    try {
+      for (let hop = 0; hop <= maxRedirects; hop++) {
+        const pinned = await assertSafeUrl(currentUrl, lookup);
+
+        // Close the dispatcher from the previous hop now that we've
+        // validated the next URL — its body (a 3xx response) has already
+        // been read by the time we got here.
+        if (dispatcher) {
+          await dispatcher.close().catch(() => {});
+          dispatcher = undefined;
+        }
+
+        // Build an IP-pinned dispatcher so DNS rebinding can't swap the
+        // hostname to a private address between our resolve and connect.
+        dispatcher = new Agent({
+          connect: {
+            lookup: (
+              _host: string,
+              _options: unknown,
+              cb: (
+                err: NodeJS.ErrnoException | null,
+                address: string,
+                family: number,
+              ) => void,
+            ) => {
+              cb(null, pinned.address, pinned.family);
+            },
+          },
+        });
+
+        const res = await f(currentUrl.toString(), {
+          method: "GET",
+          headers,
+          redirect: "manual",
+          signal,
+          // Node's fetch (undici-backed) accepts a `dispatcher` on init.
+          // The browser `fetch` type doesn't include it, but we're a server
+          // tool — cast through.
+          ...({ dispatcher } as { dispatcher: unknown }),
+        });
+
+        if (res.status >= 300 && res.status < 400) {
+          const loc = res.headers.get("location");
+          if (!loc) {
+            throw new Error(`fetch ${res.status} without location`);
+          }
+          if (hop >= maxRedirects) {
+            throw new Error("blocked: too many redirects");
+          }
+          const next = new URL(loc, currentUrl);
+          const sameOrigin = next.origin === currentUrl.origin;
+          if (!sameOrigin) {
+            headers = stripCredentialHeaders(headers);
+          }
+          currentUrl = next;
+          continue;
+        }
+
+        if (!res.ok) {
+          throw new Error(`fetch ${res.status}`);
+        }
+        finalResponse = res;
+        finalUrl = currentUrl;
+        break;
+      }
+
+      if (!finalResponse) {
+        // Loop ended without a non-redirect response — treat as redirect cap.
+        throw new Error("blocked: too many redirects");
+      }
+
+      const html = await readCappedBody(finalResponse, cap, signal);
+      const dom = new JSDOM(html, { url: finalUrl.toString() });
+      const article = new Readability(dom.window.document).parse();
+      if (article?.textContent) {
+        return {
+          title: article.title || finalUrl.toString(),
+          text: article.textContent.slice(0, 4000),
+        };
+      }
+      const $ = cheerio.load(html);
+      $("script, style, noscript").remove();
+      return {
+        title: $("title").text() || finalUrl.toString(),
+        text: $("body").text().replace(/\s+/g, " ").slice(0, 4000),
+      };
+    } finally {
+      // Body has been fully drained (or we're erroring out); safe to close.
+      await dispatcher?.close().catch(() => {});
+    }
+  }
 }

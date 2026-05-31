@@ -58,21 +58,34 @@ describe("WebpageNode", () => {
     vi.restoreAllMocks();
   });
 
-  it("renders header with title, hostname badge, mode badge, Open button", () => {
+  it("renders header with title, hostname badge, mode badge, Open link", () => {
     render(
       React.createElement(WebpageNode, {
         shape: makeShape({ mode: "link", title: "Hello world" }),
       }),
     );
-    // Title appears once — in the header bar only. The link-mode body no
-    // longer duplicates it (PR2c polish: hostname + summary + Open).
+    // Title appears once — in the header bar only. The link-mode body
+    // doesn't duplicate it (PR: simplify link body).
     expect(screen.getAllByText("Hello world").length).toBe(1);
     expect(screen.getAllByText("example.com").length).toBeGreaterThan(0);
     expect(screen.getByText("link")).toBeInTheDocument();
+    // The header carries the single Open affordance now.
     const openLinks = screen.getAllByRole("link", {
-      name: /Open URL in new tab|Open example\.com in new tab/i,
+      name: /Open URL in new tab/i,
     });
-    expect(openLinks.length).toBeGreaterThan(0);
+    expect(openLinks.length).toBe(1);
+  });
+
+  it("renders a favicon img in the header with the s2 favicon service URL", () => {
+    const { container } = render(
+      React.createElement(WebpageNode, {
+        shape: makeShape({ mode: "link", hostname: "stripe.com" }),
+      }),
+    );
+    const img = container.querySelector("img");
+    expect(img).not.toBeNull();
+    expect(img?.getAttribute("src")).toContain("google.com/s2/favicons");
+    expect(img?.getAttribute("src")).toContain("stripe.com");
   });
 
   it("iframe mode renders an iframe with the locked sandbox", () => {
@@ -107,14 +120,16 @@ describe("WebpageNode", () => {
       }),
     );
     await waitFor(() => {
-      const img = container.querySelector("img");
+      // The header's favicon is also an <img>; pick the screenshot one
+      // by class (the favicon has shrink-0 / h-4, the screenshot covers).
+      const img = container.querySelector("img.object-cover");
       expect(img).not.toBeNull();
       expect(img?.getAttribute("src")).toMatch(/^blob:/);
     });
   });
 
-  it("link mode renders hostname + summary + compact Open button (no duplicated title)", () => {
-    render(
+  it("link mode renders hostname + summary, no Open button in body", () => {
+    const { container } = render(
       React.createElement(WebpageNode, {
         shape: makeShape({
           mode: "link",
@@ -128,12 +143,14 @@ describe("WebpageNode", () => {
     expect(screen.getAllByText("Stripe checkout").length).toBe(1);
     // Summary appears once in the body — the redundant footer is gone.
     expect(screen.getAllByText("A short summary.").length).toBe(1);
-    // Button label collapsed to "Open ↗" so it survives small render scales.
-    const open = screen.getByRole("link", {
-      name: /Open example\.com in new tab/i,
+    // The header carries the single Open affordance now; the link-body
+    // "Open ↗" button was the "big black blob" the user flagged. There
+    // should be exactly one Open link, and it lives inside the <header>.
+    const links = screen.getAllByRole("link", {
+      name: /Open URL in new tab/i,
     });
-    expect(open).toBeInTheDocument();
-    expect(open.textContent).toMatch(/Open\s+↗/);
+    expect(links.length).toBe(1);
+    expect(container.querySelector("header")?.contains(links[0])).toBe(true);
   });
 
   it("link mode without a summary shows a muted 'No preview available' fallback", () => {
@@ -236,9 +253,10 @@ describe("WebpageNode", () => {
       }),
     );
     await waitFor(() => {
-      expect(container.querySelector("img")?.getAttribute("src")).toMatch(
-        /^blob:/,
-      );
+      // Match the screenshot img by class — the favicon is also an <img>.
+      expect(
+        container.querySelector("img.object-cover")?.getAttribute("src"),
+      ).toMatch(/^blob:/);
     });
     unmount();
     expect(revokeSpy).toHaveBeenCalledWith("blob:revokable");
