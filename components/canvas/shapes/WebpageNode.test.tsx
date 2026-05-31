@@ -64,14 +64,13 @@ describe("WebpageNode", () => {
         shape: makeShape({ mode: "link", title: "Hello world" }),
       }),
     );
-    // "Hello world" appears in both the header span and (in link mode) the
-    // card body h3 — both render the title for redundancy. We only need to
-    // know it's in the DOM at least once.
-    expect(screen.getAllByText("Hello world").length).toBeGreaterThan(0);
+    // Title appears once — in the header bar only. The link-mode body no
+    // longer duplicates it (PR2c polish: hostname + summary + Open).
+    expect(screen.getAllByText("Hello world").length).toBe(1);
     expect(screen.getAllByText("example.com").length).toBeGreaterThan(0);
     expect(screen.getByText("link")).toBeInTheDocument();
     const openLinks = screen.getAllByRole("link", {
-      name: /Open URL in new tab|Open in new tab/i,
+      name: /Open URL in new tab|Open example\.com in new tab/i,
     });
     expect(openLinks.length).toBeGreaterThan(0);
   });
@@ -114,7 +113,7 @@ describe("WebpageNode", () => {
     });
   });
 
-  it("link mode renders title, hostname, and Open button in card body", () => {
+  it("link mode renders hostname + summary + compact Open button (no duplicated title)", () => {
     render(
       React.createElement(WebpageNode, {
         shape: makeShape({
@@ -124,13 +123,26 @@ describe("WebpageNode", () => {
         }),
       }),
     );
-    // Title is duplicated in the header and the card body — both should be present.
-    expect(screen.getAllByText("Stripe checkout").length).toBeGreaterThan(0);
-    // Summary appears in both the body's <p> and the link-mode footer.
-    expect(screen.getAllByText("A short summary.").length).toBeGreaterThan(0);
-    expect(
-      screen.getByRole("link", { name: "Open in new tab" }),
-    ).toBeInTheDocument();
+    // Title appears once — in the header bar only. The card body no longer
+    // duplicates it so 320×220 fallback tiles read cleanly.
+    expect(screen.getAllByText("Stripe checkout").length).toBe(1);
+    // Summary appears once in the body — the redundant footer is gone.
+    expect(screen.getAllByText("A short summary.").length).toBe(1);
+    // Button label collapsed to "Open ↗" so it survives small render scales.
+    const open = screen.getByRole("link", {
+      name: /Open example\.com in new tab/i,
+    });
+    expect(open).toBeInTheDocument();
+    expect(open.textContent).toMatch(/Open\s+↗/);
+  });
+
+  it("link mode without a summary shows a muted 'No preview available' fallback", () => {
+    render(
+      React.createElement(WebpageNode, {
+        shape: makeShape({ mode: "link", title: "Anything", summary: "" }),
+      }),
+    );
+    expect(screen.getByText(/No preview available/i)).toBeInTheDocument();
   });
 
   it("switchMode (via screenshot fetch failure) calls editor.updateShape", async () => {
@@ -262,7 +274,7 @@ describe("WebpageNode", () => {
       }),
     );
     const links = screen.getAllByRole("link", {
-      name: /Open URL in new tab|Open in new tab/i,
+      name: /Open URL in new tab|Open example\.com in new tab/i,
     });
     expect(links.length).toBeGreaterThan(0);
     for (const link of links) {

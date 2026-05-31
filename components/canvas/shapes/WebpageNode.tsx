@@ -11,7 +11,10 @@ const RENDERER_BASE_URL =
 type WebpageNodeProps = { shape: WebpageNodeShape };
 
 export function WebpageNode({ shape }: WebpageNodeProps) {
-  const { mode, url, title, hostname, summary, w, h } = shape.props;
+  const { mode, url, title, hostname, w, h } = shape.props;
+  // `summary` is intentionally not destructured here — link-mode polish
+  // (PR2c) routes summary text through the LinkCard body instead of
+  // duplicating it in a footer below the screenshot/iframe pane.
 
   const switchMode = (next: WebpageNodeMode) => {
     if (next === mode) return;
@@ -60,11 +63,6 @@ export function WebpageNode({ shape }: WebpageNodeProps) {
           onSwitchMode={switchMode}
         />
       </div>
-      {mode === "link" && summary ? (
-        <footer className="shrink-0 border-[#ece9dd] border-t bg-white px-3 py-2 text-[12px] text-[#5d6256]">
-          <p className="line-clamp-2">{summary}</p>
-        </footer>
-      ) : null}
     </article>
   );
 }
@@ -209,34 +207,39 @@ function ScreenshotImg({ url, onError }: { url: string; onError: () => void }) {
 
 function LinkCard({
   hostname,
-  title,
   summary,
   url,
 }: {
   hostname: string;
-  title: string;
+  // `title` is intentionally not consumed — the article header already
+  // displays it; repeating it in the card body crowds the 320×220 default
+  // tile and pushes the action button below the fold. Kept on the prop
+  // list of the parent caller so the rest of the renderer stays simple.
+  title?: string;
   summary?: string;
   url: string;
 }) {
   return (
-    <div className="flex h-full w-full flex-col items-start justify-center gap-2 bg-[#f7f7f2] p-4">
-      <p className="text-[11px] font-semibold uppercase tracking-wider text-[#5d6256]">
+    <div className="flex h-full w-full flex-col gap-1.5 bg-[#f7f7f2] px-4 py-3">
+      <p className="text-[10px] font-semibold uppercase tracking-wider text-[#5d6256]">
         {hostname}
       </p>
-      <h3 className="line-clamp-2 text-[15px] font-semibold text-[#171814]">
-        {title || hostname}
-      </h3>
       {summary ? (
-        <p className="line-clamp-3 text-[12px] text-[#5d6256]">{summary}</p>
-      ) : null}
+        <p className="line-clamp-3 text-[12px] leading-snug text-[#3a3d35]">
+          {summary}
+        </p>
+      ) : (
+        <p className="text-[12px] text-[#8a8d80]">No preview available.</p>
+      )}
       <a
-        className="mt-auto inline-flex items-center rounded-md bg-[#273321] px-3 py-1.5 text-[12px] font-medium text-white hover:bg-[#36452d]"
+        aria-label={`Open ${hostname} in new tab`}
+        className="mt-auto inline-flex w-fit items-center gap-1 rounded-md bg-[#273321] px-2.5 py-1 text-[11px] font-medium text-white hover:bg-[#36452d]"
         href={url}
         onPointerDown={(e) => e.stopPropagation()}
         rel="noopener noreferrer"
         target="_blank"
       >
-        Open in new tab
+        Open {"↗"}
       </a>
     </div>
   );
