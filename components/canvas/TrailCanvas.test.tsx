@@ -81,7 +81,7 @@ describe("TrailCanvas", () => {
   });
 
   it("passes components prop with StylePanel hidden", async () => {
-    render(React.createElement(TrailCanvas));
+    render(React.createElement(TrailCanvas, { trailId: "test-trail" }));
     // The component renders a placeholder until loadSnapshot resolves;
     // flush microtasks so the gated useEffect resolves and Tldraw mounts.
     await act(async () => {
@@ -95,7 +95,7 @@ describe("TrailCanvas", () => {
   });
 
   it("defaults the current tool to 'hand' on mount", async () => {
-    render(React.createElement(TrailCanvas));
+    render(React.createElement(TrailCanvas, { trailId: "test-trail" }));
     await act(async () => {
       await Promise.resolve();
       await Promise.resolve();

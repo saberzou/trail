@@ -1,6 +1,9 @@
 "use client";
 
+import { ArrowLeft } from "lucide-react";
+import Link from "next/link";
 import { useEffect } from "react";
+import { Button } from "@/components/ui/button";
 import { hydrateSettings, useSettingsStore } from "../../lib/settings/store";
 import { ApiKeyRow } from "./_components/ApiKeyRow";
 import { CopilotRow } from "./_components/CopilotRow";
@@ -18,21 +21,39 @@ export default function SettingsPage() {
   }, [hydrated]);
 
   return (
-    <main className="min-h-screen bg-[#f7f7f2] px-6 py-10 text-[#171814]">
-      <div className="mx-auto flex max-w-2xl flex-col gap-8">
+    <main className="min-h-screen bg-background text-foreground">
+      <header className="border-border border-b">
+        <div className="mx-auto flex max-w-2xl items-center justify-between px-6 py-4">
+          <Button asChild size="sm" variant="ghost">
+            <Link href="/">
+              <ArrowLeft />
+              Trails
+            </Link>
+          </Button>
+          <div className="flex items-center gap-2">
+            <span
+              aria-hidden="true"
+              className="inline-block size-4 rounded bg-primary"
+            />
+            <span className="font-medium text-sm">Trail</span>
+          </div>
+        </div>
+      </header>
+
+      <div className="mx-auto flex max-w-2xl flex-col gap-8 px-6 py-10">
         <header className="space-y-3">
           <p className="font-medium text-[#5f6f52] text-sm uppercase tracking-[0.18em]">
             Trail Settings
           </p>
           <div className="space-y-2">
             <h1 className="font-semibold text-3xl">Provider credentials</h1>
-            <p className="text-[#4c5145] text-sm">
+            <p className="text-muted-foreground text-sm">
               Keys never leave your browser.
             </p>
           </div>
         </header>
 
-        <aside className="rounded border border-amber-500/40 bg-amber-50/50 p-3 text-sm">
+        <aside className="rounded-lg border border-amber-500/40 bg-amber-50/50 p-3 text-sm">
           <strong>Where your keys live:</strong> Browser only. Encrypted with
           AES-GCM using a non-extractable key in IndexedDB. This protects
           against someone reading your browser profile on disk, but{" "}
@@ -76,8 +97,7 @@ export default function SettingsPage() {
             </section>
 
             <div>
-              <button
-                className="rounded border border-red-500 px-3 py-1 text-red-600 hover:bg-red-50"
+              <Button
                 onClick={async () => {
                   if (
                     !confirm(
@@ -89,15 +109,16 @@ export default function SettingsPage() {
                   await wipeAll();
                 }}
                 type="button"
+                variant="destructive"
               >
                 Wipe all credentials
-              </button>
+              </Button>
             </div>
           </>
         ) : (
           <div
             aria-live="polite"
-            className="rounded border border-[#d9d8cc] bg-white p-6 text-[#5d6256] text-sm"
+            className="rounded-lg border border-border bg-card p-6 text-muted-foreground text-sm"
             role="status"
           >
             Loading saved credentials…

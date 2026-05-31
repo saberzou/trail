@@ -7,7 +7,10 @@ import {
   seedLastHash,
   shouldSkipWrite,
   wipeSnapshot,
+  wipeSnapshotFor,
 } from "./persistence";
+
+const T = "trail-1";
 
 describe("canvas persistence", () => {
   beforeEach(async () => {
@@ -15,7 +18,7 @@ describe("canvas persistence", () => {
   });
 
   it("returns null when nothing is stored", async () => {
-    expect(await loadSnapshot()).toBeNull();
+    expect(await loadSnapshot(T)).toBeNull();
   });
 
   it("round-trips a snapshot", async () => {
@@ -23,14 +26,33 @@ describe("canvas persistence", () => {
       store: { "shape:abc": { id: "shape:abc", x: 1 } },
       schema: { v: 2 },
     };
-    await saveSnapshot(snap);
-    expect(await loadSnapshot()).toEqual(snap);
+    await saveSnapshot(T, snap);
+    expect(await loadSnapshot(T)).toEqual(snap);
   });
 
   it("overwrites prior snapshot", async () => {
-    await saveSnapshot({ a: 1 });
-    await saveSnapshot({ a: 2 });
-    expect(await loadSnapshot()).toEqual({ a: 2 });
+    await saveSnapshot(T, { a: 1 });
+    await saveSnapshot(T, { a: 2 });
+    expect(await loadSnapshot(T)).toEqual({ a: 2 });
+  });
+
+  it("keeps separate trails isolated", async () => {
+    await saveSnapshot("a", { store: { "shape:1": { id: "shape:1" } } });
+    await saveSnapshot("b", { store: { "shape:2": { id: "shape:2" } } });
+    expect(await loadSnapshot("a")).toEqual({
+      store: { "shape:1": { id: "shape:1" } },
+    });
+    expect(await loadSnapshot("b")).toEqual({
+      store: { "shape:2": { id: "shape:2" } },
+    });
+  });
+
+  it("wipeSnapshotFor deletes only the given trail", async () => {
+    await saveSnapshot("a", { a: 1 });
+    await saveSnapshot("b", { b: 1 });
+    await wipeSnapshotFor("a");
+    expect(await loadSnapshot("a")).toBeNull();
+    expect(await loadSnapshot("b")).toEqual({ b: 1 });
   });
 
   it("dedups identical snapshots end-to-end (counts real put() calls)", async () => {
@@ -56,20 +78,20 @@ describe("canvas persistence", () => {
       const B = { store: { "shape:a": { id: "shape:a", x: 2 } } };
 
       // A then A — dedup skips the second write.
-      await saveSnapshot(A);
-      await saveSnapshot(A);
+      await saveSnapshot(T, A);
+      await saveSnapshot(T, A);
       expect(writeCount).toBe(1);
 
       // A then B — distinct snapshot triggers a write.
-      await saveSnapshot(B);
+      await saveSnapshot(T, B);
       expect(writeCount).toBe(2);
 
       // wipe resets lastHash; saving A again should land in IDB.
       await wipeSnapshot();
-      await saveSnapshot(A);
+      await saveSnapshot(T, A);
       expect(writeCount).toBe(3);
 
-      expect(await loadSnapshot()).toEqual(A);
+      expect(await loadSnapshot(T)).toEqual(A);
     } finally {
       spy.mockRestore();
     }
@@ -98,12 +120,12 @@ describe("canvas persistence", () => {
     try {
       const A = { store: { "shape:a": { id: "shape:a", x: 1 } } };
       // Simulate: we just loaded A from IDB and seeded the dedup hash.
-      seedLastHash(A);
+      seedLastHash(T, A);
       // First trigger after hydrate with the unchanged snapshot must be a no-op.
-      await saveSnapshot(A);
+      await saveSnapshot(T, A);
       expect(writeCount).toBe(0);
       // A change still writes.
-      await saveSnapshot({ ...A, more: 1 });
+      await saveSnapshot(T, { ...A, more: 1 });
       expect(writeCount).toBe(1);
     } finally {
       spy.mockRestore();

@@ -88,6 +88,6 @@ fi
 
 echo
 bold "Done. Try it:"
-echo "  trail              # start dev server + open /canvas"
+echo "  trail              # start dev server + open the home page"
 echo "  trail status"
 echo "  trail help"
