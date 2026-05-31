@@ -24,7 +24,6 @@
 
 import { nanoid } from "nanoid";
 import {
-  createBindingId,
   createShapeId,
   type Editor,
   type TLArrowBinding,

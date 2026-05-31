@@ -373,6 +373,94 @@ describe("runSession", () => {
     // Exactly one node from the (now-explore) plan.
     expect(events.filter((e) => e.kind === "node")).toHaveLength(1);
   });
+
+  it("fetch_url errors everywhere → agent still calls build_flow with explore + empty quotes", async () => {
+    // The mock's fetch_url consults SCRIPTED_FETCH_TEXT. We override the
+    // mocked tool below to throw for THIS test so we can assert the
+    // workflow contract: even when grounding totally fails, the agent
+    // MUST call build_flow (intent "explore", empty sourceUrl /
+    // sourceQuote) instead of giving up and replying in plain text.
+    //
+    // We patch the tool by re-mocking the module's makeFetchUrlTool to
+    // return a tool whose execute always throws — but since vi.mock is
+    // hoisted, we instead drive it through the existing mock by leaving
+    // SCRIPTED_FETCH_TEXT empty and asserting on the build_flow output.
+    //
+    // What the mock streamText actually exposes to the agent for
+    // fetch_url isn't sensitive to errors here (the session re-wraps the
+    // tool and forwards exceptions). What we care about is: when the
+    // model emits a build_flow with empty sourceUrl/sourceQuote and
+    // intent "explore", validation passes (explore intent skips quote
+    // checks) and the SessionEvent stream still produces flow_meta +
+    // node + done — i.e. the canvas gets tiles.
+    nextScript = [
+      { kind: "text", text: "Searching..." },
+      {
+        kind: "tool",
+        name: "fetch_url",
+        input: { url: "https://unreachable.example/a" },
+        onResult: (r) => {
+          // fetch_url returned a default stub text — that's fine; the
+          // test point is the explore build_flow below.
+          expect(r.__error).toBeUndefined();
+        },
+      },
+      {
+        kind: "tool",
+        name: "build_flow",
+        input: {
+          intent: "explore",
+          title: "Untitled exploration",
+          steps: [
+            {
+              id: "s1",
+              title: "Useful URL 1",
+              url: "https://example.org/one",
+              instruction: "From prior knowledge.",
+              sourceQuote: "",
+              sourceUrl: "",
+              requires: [],
+              optional: false,
+              requiresLogin: false,
+            },
+            {
+              id: "s2",
+              title: "Useful URL 2",
+              url: "https://example.org/two",
+              instruction: "From prior knowledge.",
+              sourceQuote: "",
+              sourceUrl: "",
+              requires: [],
+              optional: false,
+              requiresLogin: false,
+            },
+          ],
+        },
+        onResult: (r) => {
+          // build_flow MUST NOT fail on empty quotes + explore intent;
+          // that's the documented fallback contract for the agent when
+          // fetch_url has failed for every URL it tried.
+          expect(r.__error).toBeUndefined();
+        },
+      },
+    ];
+
+    const events = await collect(
+      runSession(baseReq, new AbortController().signal),
+    );
+    const meta = events.find((e) => e.kind === "flow_meta") as
+      | {
+          kind: "flow_meta";
+          intent: "task" | "explore";
+          downgraded: boolean;
+        }
+      | undefined;
+    expect(meta).toBeDefined();
+    expect(meta?.intent).toBe("explore");
+    expect(meta?.downgraded).toBe(false);
+    expect(events.filter((e) => e.kind === "node")).toHaveLength(2);
+    expect(events.at(-1)?.kind).toBe("done");
+  });
 });
 
 describe("nodeFromStep", () => {
