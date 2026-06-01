@@ -1,12 +1,15 @@
 # Trail
 
-A spatial canvas for the web, driven by an AI agent. Talk to one master
-agent in a left chat dock; the main canvas fills with webpage tiles —
-live iframes, Playwright screenshots, or rich link cards — laid out as
-task flows or exploration clusters.
+A spatial canvas for the web, driven by an AI agent. Organize your work
+into **Trails** — self-contained projects, each with its own canvas and
+agent session. Inside a trail, talk to the master agent in a left chat
+dock; the canvas fills with webpage tiles — live iframes, Playwright
+screenshots, or rich link cards — laid out as task flows or exploration
+clusters.
 
-> Status: **v2 / PR2a** — Playwright sidecar, three-mode `WebpageNode`,
-> chat dock with URL-paste → tile. Free-form chat lands in PR2b. See
+> Status: **v2** — Trails (per-project canvas + chat), a home page to
+> manage them, and a shadcn/ui component layer. Playwright sidecar,
+> three-mode `WebpageNode`, agent chat with URL-paste → tile. See
 > [`PLAN.md`](./PLAN.md) for the roadmap.
 
 ## Install
@@ -29,7 +32,7 @@ trail install-renderer
 Then start everything:
 
 ```bash
-trail              # starts Next.js + renderer, opens /canvas in your browser
+trail              # starts Next.js + renderer, opens the home page in your browser
 trail status       # show both PIDs and URLs
 trail logs         # tail next.js + renderer logs (interleaved)
 trail stop         # shut both down
@@ -44,21 +47,30 @@ Override the ports with `TRAIL_PORT=4000 trail` and
 
 ## Usage today
 
-- Open the left chat dock at `/canvas`.
-- **Paste a URL** (just the URL, by itself) and hit Send → it appears
-  as a tile on the canvas. The renderer probes whether the page allows
-  iframes; if yes it embeds live, if no it shows a Playwright
-  screenshot, and if both fail it falls back to a link card.
+- The home page (`/`) lists your **Trails**. Create one to start a new
+  project — it opens a fresh canvas and agent session at `/trail/<id>`.
+  Edit (rename / recolor / describe) or delete a trail from the `⋯`
+  menu on its card. Each trail's canvas and chat are isolated from the
+  others.
+- Inside a trail, **paste a URL** (just the URL, by itself) and hit
+  Send → it appears as a tile on the canvas. The renderer probes
+  whether the page allows iframes; if yes it embeds live, if no it
+  shows a Playwright screenshot, and if both fail it falls back to a
+  link card.
 - Drag, resize, zoom the canvas with tldraw's usual controls. The
-  graph persists to IndexedDB and survives reload.
-- Free-form chat with the master agent (search-grounded summaries,
-  task flow generation, "find similar" expansion) lands in **PR2b**.
-  Today, anything that isn't a bare URL gets a placeholder reply.
+  graph persists to IndexedDB (keyed per trail) and survives reload.
+- Free-form chat with the master agent produces search-grounded
+  summaries, task flows, and "find similar" expansions when an LLM
+  provider is configured in Settings.
+
+> Migrating from v1? Your previous single global canvas and chat are
+> folded into a "My first trail" project automatically the first time
+> the home page loads. `/canvas` now redirects to the trail list.
 
 ## Settings
 
-Open `/settings` from the gear icon on `/canvas` to save provider
-credentials.
+Open `/settings` from the link in the home header or a trail's chat
+dock to save provider credentials.
 
 - AI: OpenAI, Anthropic, Google Gemini, DeepSeek, GitHub Copilot
 - Search: Brave Search, Tavily
@@ -85,7 +97,7 @@ pnpm install
 pnpm exec playwright install chromium
 pnpm renderer &      # start the sidecar on :3001
 pnpm dev             # start Next.js on :3000
-# open http://127.0.0.1:3000/canvas
+# open http://127.0.0.1:3000
 ```
 
 Run tests with `pnpm test`, lint with `pnpm lint`, build with

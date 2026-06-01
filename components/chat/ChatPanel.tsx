@@ -10,6 +10,7 @@ import {
   useState,
 } from "react";
 import { createShapeId, type TLShapeId } from "tldraw";
+import { TrailSwitcher } from "@/components/trails/TrailSwitcher";
 import type { SessionRequest } from "@/lib/agent/session";
 import { getCanvasEditor } from "@/lib/canvas/editorRef";
 import { runAgentTurn } from "@/lib/chat/agentBridge";
@@ -117,7 +118,13 @@ async function probeUrl(url: string): Promise<{ iframeable: boolean }> {
   }
 }
 
-export function ChatPanel() {
+export function ChatPanel({
+  trailId,
+  trailName,
+}: {
+  trailId: string;
+  trailName: string;
+}) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [hydrated, setHydrated] = useState(false);
   const [input, setInput] = useState("");
@@ -148,16 +155,16 @@ export function ChatPanel() {
     () =>
       createDebouncedSaver<ChatHistory>(
         () => ({ version: 1, messages: messagesRef.current }),
-        saveChat,
+        (h) => saveChat(trailId, h),
         400,
       ),
-    [],
+    [trailId],
   );
 
   // Hydrate from IndexedDB on mount, then start persisting on every change.
   useEffect(() => {
     let alive = true;
-    loadChat()
+    loadChat(trailId)
       .then((h) => {
         if (!alive) return;
         // Only seed from storage if the user hasn't already started typing
@@ -173,7 +180,7 @@ export function ChatPanel() {
     return () => {
       alive = false;
     };
-  }, []);
+  }, [trailId]);
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: `messages` is the change signal — the effect body only calls trigger().
   useEffect(() => {
@@ -298,38 +305,41 @@ export function ChatPanel() {
   return (
     <aside
       aria-label="Trail chat"
-      className="flex h-screen w-[360px] shrink-0 flex-col border-[#c9c8bd] border-r bg-[#f7f7f2] text-[#171814]"
+      className="flex h-screen w-[360px] shrink-0 flex-col border-border border-r bg-background text-foreground"
     >
-      <header className="shrink-0 border-[#c9c8bd] border-b px-4 py-3">
-        <div className="flex items-center justify-between">
-          <h1 className="font-semibold text-[15px] text-[#171814]">Trail</h1>
+      <header className="shrink-0 border-border border-b px-4 py-3">
+        <div className="flex items-center justify-between gap-2">
+          <TrailSwitcher
+            currentTrailId={trailId}
+            currentTrailName={trailName}
+          />
           <a
-            className="text-[11px] text-[#5d6256] hover:underline"
+            className="shrink-0 text-[11px] text-muted-foreground hover:text-foreground"
             href="/settings"
           >
             Settings
           </a>
         </div>
-        <p className="mt-0.5 text-[12px] text-[#5d6256]">
+        <p className="mt-1 text-[12px] text-muted-foreground">
           paste a URL or type a question
         </p>
         {rendererStatus === "checking" ? (
-          <p className="mt-1 flex items-center gap-1.5 text-[11px] text-[#5d6256]">
+          <p className="mt-1 flex items-center gap-1.5 text-[11px] text-muted-foreground">
             <span
               aria-hidden="true"
-              className="inline-block h-1.5 w-1.5 rounded-full bg-[#a5a89c]"
+              className="inline-block h-1.5 w-1.5 rounded-full bg-muted-foreground/60"
             />
             checking renderer…
           </p>
         ) : null}
         {rendererStatus === "offline" ? (
-          <p className="mt-1 flex items-center gap-1.5 text-[11px] text-[#7a5a1f]">
+          <p className="mt-1 flex items-center gap-1.5 text-[11px] text-amber-700 dark:text-amber-500">
             <span
               aria-hidden="true"
-              className="inline-block h-1.5 w-1.5 rounded-full bg-[#c98a1a]"
+              className="inline-block h-1.5 w-1.5 rounded-full bg-amber-500"
             />
             renderer offline — screenshots disabled. Run{" "}
-            <code className="rounded bg-[#f0ecd9] px-1 py-px text-[10px]">
+            <code className="rounded bg-amber-500/15 px-1 py-px text-[10px]">
               trail install-renderer
             </code>
             .
@@ -345,21 +355,21 @@ export function ChatPanel() {
         role="log"
       >
         {messages.length === 0 ? (
-          <p className="px-1 text-[12px] text-[#5d6256]">
+          <p className="px-1 text-[12px] text-muted-foreground">
             Drop in a link to add it to the canvas.
           </p>
         ) : (
           messages.map((m) => <MessageCard key={m.id} message={m} />)
         )}
         {error ? (
-          <p className="rounded border border-red-200 bg-red-50 px-2 py-1 text-[12px] text-red-700">
+          <p className="rounded-md border border-destructive/30 bg-destructive/10 px-2 py-1 text-[12px] text-destructive">
             {error}
           </p>
         ) : null}
       </div>
 
       <form
-        className="shrink-0 border-[#c9c8bd] border-t bg-[#f7f7f2] p-3"
+        className="shrink-0 border-border border-t bg-background p-3"
         onSubmit={(e) => {
           e.preventDefault();
           void submit();
@@ -367,7 +377,7 @@ export function ChatPanel() {
       >
         <textarea
           aria-label="Message input"
-          className="w-full resize-none rounded border border-[#c9c8bd] bg-white px-2 py-1.5 text-[13px] text-[#171814] outline-none focus:border-[#5d6256]"
+          className="w-full resize-none rounded-md border border-input bg-card px-2 py-1.5 text-[13px] text-foreground outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50"
           disabled={sending}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={onKeyDown}
@@ -375,11 +385,11 @@ export function ChatPanel() {
           rows={3}
           value={input}
         />
-        <div className="mt-2 flex items-center justify-between text-[11px] text-[#5d6256]">
+        <div className="mt-2 flex items-center justify-between text-[11px] text-muted-foreground">
           <span>Cmd+Enter to send</span>
           {sending ? (
             <button
-              className="rounded bg-[#7a3b35] px-3 py-1 font-medium text-[12px] text-white hover:bg-[#5f2c28]"
+              className="rounded-md bg-destructive px-3 py-1 font-medium text-[12px] text-destructive-foreground hover:bg-destructive/90"
               onClick={stop}
               type="button"
             >
@@ -387,7 +397,7 @@ export function ChatPanel() {
             </button>
           ) : (
             <button
-              className="rounded bg-[#273321] px-3 py-1 font-medium text-[12px] text-white disabled:cursor-not-allowed disabled:bg-[#a5a89c]"
+              className="rounded-md bg-primary px-3 py-1 font-medium text-[12px] text-primary-foreground hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"
               disabled={input.trim().length === 0}
               type="submit"
             >
@@ -696,14 +706,14 @@ function MessageCard({ message }: { message: ChatMessage }) {
     <div
       className={
         isUser
-          ? "rounded border border-[#c9c8bd] bg-white px-2 py-1.5"
-          : "rounded border border-[#ece9dd] bg-[#ece9dd] px-2 py-1.5"
+          ? "rounded-md border border-border bg-card px-2 py-1.5"
+          : "rounded-md border border-accent bg-accent/60 px-2 py-1.5"
       }
     >
-      <p className="text-[10px] font-semibold uppercase tracking-wider text-[#5d6256]">
+      <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
         {isUser ? "you" : "trail"}
       </p>
-      <p className="mt-0.5 whitespace-pre-wrap break-words text-[13px] text-[#171814]">
+      <p className="mt-0.5 whitespace-pre-wrap break-words text-[13px] text-foreground">
         {message.text}
       </p>
     </div>

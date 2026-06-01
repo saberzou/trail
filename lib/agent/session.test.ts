@@ -22,6 +22,7 @@ type ScriptEntry =
       kind: "tool";
       name: string;
       input: unknown;
+      // biome-ignore lint/suspicious/noConfusingVoidType: void models a callback that returns nothing OR a follow-up script, without forcing every callback to `return`.
       onResult?: (r: ToolExecuteResult) => ScriptEntry[] | void;
     };
 

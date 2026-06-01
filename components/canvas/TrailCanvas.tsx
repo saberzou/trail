@@ -30,7 +30,7 @@ const TLDRAW_COMPONENTS: TLUiComponents = {
   StylePanel: null,
 };
 
-export function TrailCanvas() {
+export function TrailCanvas({ trailId }: { trailId: string }) {
   // Gate the <Tldraw> mount until we've checked IndexedDB so we don't race the
   // hydrate against any programmatic shape creation.
   const [initial, setInitial] = useState<{
@@ -41,7 +41,7 @@ export function TrailCanvas() {
 
   useEffect(() => {
     let alive = true;
-    loadSnapshot()
+    loadSnapshot(trailId)
       .then((snap) => {
         if (alive) setInitial({ snapshot: snap });
       })
@@ -52,14 +52,14 @@ export function TrailCanvas() {
     return () => {
       alive = false;
     };
-  }, []);
+  }, [trailId]);
 
   if (!initial) {
-    return <div className="absolute inset-0 bg-[#f4f1e8]" />;
+    return <div className="absolute inset-0 bg-muted" />;
   }
 
   return (
-    <div className="absolute inset-0 bg-[#f4f1e8]">
+    <div className="absolute inset-0 bg-muted">
       <Tldraw
         components={TLDRAW_COMPONENTS}
         shapeUtils={[WebpageNodeUtil]}
@@ -84,7 +84,7 @@ export function TrailCanvas() {
               );
               // Seed the dedup hash so the very first listen() tick after
               // hydrate doesn't pointlessly re-serialize the same snapshot.
-              seedLastHash(snapshot);
+              seedLastHash(trailId, snapshot);
             } catch (err) {
               console.error("[trail] failed to load canvas snapshot", err);
             }
@@ -98,7 +98,7 @@ export function TrailCanvas() {
 
           const saver = createDebouncedSaver(
             () => editor.store.getStoreSnapshot(),
-            saveSnapshot,
+            (snap) => saveSnapshot(trailId, snap),
             400,
           );
           // Listen to document-scope changes from any source (user *and*

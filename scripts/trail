@@ -2,7 +2,7 @@
 # trail — launch the Trail visual agent canvas in your browser.
 #
 # Usage:
-#   trail                  start Next.js + renderer sidecar and open /canvas
+#   trail                  start Next.js + renderer sidecar and open the home page
 #   trail stop             stop both processes
 #   trail status           show running state + URLs for both processes
 #   trail logs             tail next.js + renderer logs (interleaved)
@@ -28,7 +28,7 @@ REPO_DIR="${TRAIL_REPO:-$_default_repo}"
 PORT="${TRAIL_PORT:-3000}"
 RENDERER_PORT="${TRAIL_RENDERER_PORT:-3001}"
 HOST="127.0.0.1"
-URL="http://${HOST}:${PORT}/canvas"
+URL="http://${HOST}:${PORT}/"
 RENDERER_URL="http://${HOST}:${RENDERER_PORT}/health"
 STATE_DIR="$HOME/.trail"
 PID_FILE="$STATE_DIR/server.pid"

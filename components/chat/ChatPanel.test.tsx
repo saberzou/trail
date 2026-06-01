@@ -22,8 +22,17 @@ vi.mock("@/lib/chat/agentBridge", () => ({
   runAgentTurn: vi.fn(async () => {}),
 }));
 
+// ChatPanel's header now embeds <TrailSwitcher>, which calls useRouter().
+// There's no App Router context in the test renderer, so stub it.
+vi.mock("next/navigation", () => ({
+  useRouter: () => ({ push: vi.fn(), prefetch: vi.fn(), replace: vi.fn() }),
+}));
+
 import { runAgentTurn } from "@/lib/chat/agentBridge";
 import { ChatPanel } from "./ChatPanel";
+
+const TEST_TRAIL_ID = "test-trail";
+const TEST_PROPS = { trailId: TEST_TRAIL_ID, trailName: "Test trail" };
 
 type MockEditor = {
   createShape: ReturnType<typeof vi.fn>;
@@ -95,7 +104,7 @@ describe("ChatPanel", () => {
   });
 
   it("renders empty state and a disabled Send button", async () => {
-    render(React.createElement(ChatPanel));
+    render(React.createElement(ChatPanel, TEST_PROPS));
     await waitFor(() => {
       expect(screen.getByRole("button", { name: /Send/i })).toBeInTheDocument();
     });
@@ -105,7 +114,7 @@ describe("ChatPanel", () => {
   });
 
   it("typing enables Send; empty input doesn't submit", async () => {
-    render(React.createElement(ChatPanel));
+    render(React.createElement(ChatPanel, TEST_PROPS));
     const textarea = await screen.findByLabelText("Message input");
     fireEvent.change(textarea, { target: { value: "hello" } });
     const send = screen.getByRole("button", { name: /Send/i });
@@ -122,7 +131,7 @@ describe("ChatPanel", () => {
     });
     vi.stubGlobal("fetch", fetchMock);
 
-    render(React.createElement(ChatPanel));
+    render(React.createElement(ChatPanel, TEST_PROPS));
     const textarea = await screen.findByLabelText("Message input");
     fireEvent.change(textarea, { target: { value: "https://example.com" } });
     fireEvent.submit(textarea.closest("form")!);
@@ -148,7 +157,7 @@ describe("ChatPanel", () => {
       "fetch",
       vi.fn(async () => jsonResponse({ iframeable: true })),
     );
-    render(React.createElement(ChatPanel));
+    render(React.createElement(ChatPanel, TEST_PROPS));
     const textarea = await screen.findByLabelText("Message input");
     fireEvent.change(textarea, { target: { value: "https://wikipedia.org" } });
     fireEvent.submit(textarea.closest("form")!);
@@ -168,7 +177,7 @@ describe("ChatPanel", () => {
       },
     );
 
-    render(React.createElement(ChatPanel));
+    render(React.createElement(ChatPanel, TEST_PROPS));
     const textarea = await screen.findByLabelText("Message input");
     fireEvent.change(textarea, { target: { value: "tell me about ducks" } });
     fireEvent.submit(textarea.closest("form")!);
@@ -193,7 +202,7 @@ describe("ChatPanel", () => {
       },
     );
 
-    render(React.createElement(ChatPanel));
+    render(React.createElement(ChatPanel, TEST_PROPS));
     const textarea = await screen.findByLabelText("Message input");
     fireEvent.change(textarea, { target: { value: "us visa application" } });
     fireEvent.submit(textarea.closest("form")!);
@@ -211,7 +220,7 @@ describe("ChatPanel", () => {
         callbacks?.onDone?.();
       },
     );
-    render(React.createElement(ChatPanel));
+    render(React.createElement(ChatPanel, TEST_PROPS));
     const textarea = await screen.findByLabelText("Message input");
     fireEvent.change(textarea, { target: { value: "one source please" } });
     fireEvent.submit(textarea.closest("form")!);
@@ -227,7 +236,7 @@ describe("ChatPanel", () => {
         callbacks?.onDone?.();
       },
     );
-    render(React.createElement(ChatPanel));
+    render(React.createElement(ChatPanel, TEST_PROPS));
     const textarea = await screen.findByLabelText("Message input");
     fireEvent.change(textarea, { target: { value: "anything" } });
     fireEvent.submit(textarea.closest("form")!);
@@ -238,7 +247,7 @@ describe("ChatPanel", () => {
 
   it("free-form text with NO provider configured shows the settings hint", async () => {
     // No providers seeded; clearProviders() ran in beforeEach.
-    render(React.createElement(ChatPanel));
+    render(React.createElement(ChatPanel, TEST_PROPS));
     const textarea = await screen.findByLabelText("Message input");
     fireEvent.change(textarea, { target: { value: "tell me about ducks" } });
     fireEvent.submit(textarea.closest("form")!);
@@ -265,7 +274,7 @@ describe("ChatPanel", () => {
       },
     );
 
-    render(React.createElement(ChatPanel));
+    render(React.createElement(ChatPanel, TEST_PROPS));
     const textarea = await screen.findByLabelText("Message input");
     fireEvent.change(textarea, { target: { value: "us visa application" } });
     fireEvent.submit(textarea.closest("form")!);
@@ -291,7 +300,7 @@ describe("ChatPanel", () => {
           }),
       ),
     );
-    render(React.createElement(ChatPanel));
+    render(React.createElement(ChatPanel, TEST_PROPS));
     const textarea = await screen.findByLabelText("Message input");
     fireEvent.change(textarea, { target: { value: "https://example.com" } });
     fireEvent.submit(textarea.closest("form")!);
@@ -330,7 +339,7 @@ describe("ChatPanel", () => {
         "fetch",
         vi.fn(async () => jsonResponse({ iframeable: false })),
       );
-      render(React.createElement(ChatPanel));
+      render(React.createElement(ChatPanel, TEST_PROPS));
       const textarea = await screen.findByLabelText("Message input");
       fireEvent.change(textarea, { target: { value: input } });
       fireEvent.submit(textarea.closest("form")!);
@@ -353,7 +362,7 @@ describe("ChatPanel", () => {
   });
 
   it("Cmd+Enter submits the input", async () => {
-    render(React.createElement(ChatPanel));
+    render(React.createElement(ChatPanel, TEST_PROPS));
     const textarea = await screen.findByLabelText("Message input");
     fireEvent.change(textarea, { target: { value: "https://example.com" } });
     fireEvent.keyDown(textarea, {
@@ -366,7 +375,7 @@ describe("ChatPanel", () => {
   });
 
   it("Ctrl+Enter also submits the input", async () => {
-    render(React.createElement(ChatPanel));
+    render(React.createElement(ChatPanel, TEST_PROPS));
     const textarea = await screen.findByLabelText("Message input");
     fireEvent.change(textarea, { target: { value: "https://example.com" } });
     fireEvent.keyDown(textarea, { key: "Enter", ctrlKey: true });
@@ -386,7 +395,7 @@ describe("ChatPanel", () => {
     );
     vi.stubGlobal("fetch", fetchMock);
 
-    render(React.createElement(ChatPanel));
+    render(React.createElement(ChatPanel, TEST_PROPS));
     const textarea = await screen.findByLabelText("Message input");
     fireEvent.change(textarea, { target: { value: "https://first.example" } });
     fireEvent.submit(textarea.closest("form")!);
@@ -416,7 +425,7 @@ describe("ChatPanel", () => {
 
   it("shows a friendly message when the canvas editor is null", async () => {
     setCanvasEditor(null);
-    render(React.createElement(ChatPanel));
+    render(React.createElement(ChatPanel, TEST_PROPS));
     const textarea = await screen.findByLabelText("Message input");
     fireEvent.change(textarea, { target: { value: "https://example.com" } });
     fireEvent.submit(textarea.closest("form")!);
@@ -434,7 +443,7 @@ describe("ChatPanel", () => {
         }),
     );
 
-    render(React.createElement(ChatPanel));
+    render(React.createElement(ChatPanel, TEST_PROPS));
     const textarea = await screen.findByLabelText("Message input");
     fireEvent.change(textarea, { target: { value: "tell me about ducks" } });
     fireEvent.submit(textarea.closest("form")!);
@@ -459,7 +468,7 @@ describe("ChatPanel", () => {
     const storeMod = await import("@/lib/settings/store");
     const hydrateSpy = vi.spyOn(storeMod, "hydrateSettings");
 
-    render(React.createElement(ChatPanel));
+    render(React.createElement(ChatPanel, TEST_PROPS));
 
     await waitFor(() => {
       expect(hydrateSpy).toHaveBeenCalled();
@@ -492,7 +501,7 @@ describe("ChatPanel", () => {
       vi.fn(async () => jsonResponse({ iframeable: false })),
     );
 
-    render(React.createElement(ChatPanel));
+    render(React.createElement(ChatPanel, TEST_PROPS));
     const textarea = await screen.findByLabelText("Message input");
     fireEvent.change(textarea, { target: { value: "https://example.com" } });
     fireEvent.submit(textarea.closest("form")!);
@@ -532,7 +541,7 @@ describe("ChatPanel", () => {
 
   it("URL paste with NO provider configured creates the tile but skips the follow-up", async () => {
     // clearProviders() ran in beforeEach.
-    render(React.createElement(ChatPanel));
+    render(React.createElement(ChatPanel, TEST_PROPS));
     const textarea = await screen.findByLabelText("Message input");
     fireEvent.change(textarea, { target: { value: "https://example.com" } });
     fireEvent.submit(textarea.closest("form")!);
@@ -554,7 +563,7 @@ describe("ChatPanel", () => {
         return jsonResponse({});
       }),
     );
-    render(React.createElement(ChatPanel));
+    render(React.createElement(ChatPanel, TEST_PROPS));
     // Settle the probe.
     await waitFor(() => {
       expect(screen.queryByText(/checking renderer/i)).not.toBeInTheDocument();
@@ -572,18 +581,18 @@ describe("ChatPanel", () => {
         return jsonResponse({});
       }),
     );
-    render(React.createElement(ChatPanel));
+    render(React.createElement(ChatPanel, TEST_PROPS));
     expect(await screen.findByText(/renderer offline/i)).toBeInTheDocument();
   });
 
   it("header exposes a visible Settings link", async () => {
-    render(React.createElement(ChatPanel));
+    render(React.createElement(ChatPanel, TEST_PROPS));
     const link = await screen.findByRole("link", { name: /settings/i });
     expect(link).toHaveAttribute("href", "/settings");
   });
 
   it("persists messages to IndexedDB", async () => {
-    render(React.createElement(ChatPanel));
+    render(React.createElement(ChatPanel, TEST_PROPS));
     const textarea = await screen.findByLabelText("Message input");
     fireEvent.change(textarea, { target: { value: "hello world" } });
     fireEvent.submit(textarea.closest("form")!);
@@ -592,7 +601,7 @@ describe("ChatPanel", () => {
     // Wait past the debounce.
     await new Promise((r) => setTimeout(r, 500));
     const { loadChat } = await import("@/lib/chat/persistence");
-    const persisted = await loadChat();
+    const persisted = await loadChat(TEST_TRAIL_ID);
     expect(persisted.messages.length).toBeGreaterThanOrEqual(2);
     expect(persisted.messages[0]).toMatchObject({
       role: "user",

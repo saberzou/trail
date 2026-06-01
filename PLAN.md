@@ -119,7 +119,26 @@ view over both logs.
 - `stepState` prop on `WebpageNode` (`todo` / `done`) and a
   done-toggle in the header bar that propagates to downstream tiles.
 
-### Beyond PR2c
+### PR3 — Trails (multi-project) + IA + UI system (shipped)
+
+- **Trails as projects.** Each Trail is a self-contained project with
+  its own tldraw canvas and chat session. Metadata (name, description,
+  color, timestamps) lives in a `trail-projects` IndexedDB store; canvas
+  snapshots and chat history are now keyed per-trail in `trail-canvas` /
+  `trail-chat` instead of a single global `main` key.
+- **New information architecture.**
+  - `/` — home page listing trails as cards, with create / rename /
+    recolor / delete and an empty state.
+  - `/trail/[id]` — the per-trail workspace (canvas + chat dock).
+  - `/settings` — provider credentials, reachable from the home header
+    and each trail's dock.
+  - `/canvas` — redirects to the home page (back-compat).
+- **One-time migration.** A pre-existing v1 global canvas + chat is
+  folded into a "My first trail" project on first load.
+- **shadcn/ui component layer** (`components/ui/*`) on Tailwind v4,
+  themed to Trail's warm paper + forest palette via CSS design tokens.
+
+### Beyond PR3
 
 - Related-sites embedding ranker so the radial layout is meaningful.
 - Multi-tab `BroadcastChannel` sync of canvas + chat state.
@@ -127,8 +146,7 @@ view over both logs.
 - Sentry (or a slim self-hosted error sink) for the renderer process.
 - Archive snapshots — keep the HTML + screenshot at the time a tile was
   created, so an answer reproduced months later still resolves.
-- Multi-project workspaces, project switcher, JSON export (was Phase 2
-  of the original plan; deferred until single-project feels right).
+- Project switcher inside the workspace + JSON export / import of a trail.
 
 ---
 

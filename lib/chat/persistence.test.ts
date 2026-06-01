@@ -1,7 +1,15 @@
 import "fake-indexeddb/auto";
 import { beforeEach, describe, expect, it } from "vitest";
 import { openTrailDb } from "@/lib/idb/open";
-import { type ChatHistory, loadChat, saveChat, wipeChat } from "./persistence";
+import {
+  type ChatHistory,
+  loadChat,
+  saveChat,
+  wipeChat,
+  wipeChatFor,
+} from "./persistence";
+
+const T = "trail-1";
 
 describe("chat persistence", () => {
   beforeEach(async () => {
@@ -9,7 +17,7 @@ describe("chat persistence", () => {
   });
 
   it("returns an empty history when nothing is stored", async () => {
-    const h = await loadChat();
+    const h = await loadChat(T);
     expect(h).toEqual({ version: 1, messages: [] });
   });
 
@@ -32,17 +40,44 @@ describe("chat persistence", () => {
         },
       ],
     };
-    await saveChat(hist);
-    expect(await loadChat()).toEqual(hist);
+    await saveChat(T, hist);
+    expect(await loadChat(T)).toEqual(hist);
+  });
+
+  it("keeps separate trails isolated", async () => {
+    await saveChat("a", {
+      version: 1,
+      messages: [{ id: "1", role: "user", text: "a", createdAt: 1 }],
+    });
+    await saveChat("b", {
+      version: 1,
+      messages: [{ id: "2", role: "user", text: "b", createdAt: 2 }],
+    });
+    expect((await loadChat("a")).messages[0].text).toBe("a");
+    expect((await loadChat("b")).messages[0].text).toBe("b");
+  });
+
+  it("wipeChatFor clears only the given trail", async () => {
+    await saveChat("a", {
+      version: 1,
+      messages: [{ id: "1", role: "user", text: "a", createdAt: 1 }],
+    });
+    await saveChat("b", {
+      version: 1,
+      messages: [{ id: "2", role: "user", text: "b", createdAt: 2 }],
+    });
+    await wipeChatFor("a");
+    expect(await loadChat("a")).toEqual({ version: 1, messages: [] });
+    expect((await loadChat("b")).messages[0].text).toBe("b");
   });
 
   it("wipe clears the history back to empty", async () => {
-    await saveChat({
+    await saveChat(T, {
       version: 1,
       messages: [{ id: "m1", role: "user", text: "x", createdAt: 1 }],
     });
     await wipeChat();
-    expect(await loadChat()).toEqual({ version: 1, messages: [] });
+    expect(await loadChat(T)).toEqual({ version: 1, messages: [] });
   });
 
   it("returns empty history on a version mismatch (clean-load)", async () => {
@@ -50,24 +85,20 @@ describe("chat persistence", () => {
     // the load path handles future formats by ignoring them.
     const d = await openTrailDb("trail-chat", "history", 1);
     try {
-      await d.put(
-        "history",
-        { version: 2, messages: [{ wrong: "shape" }] },
-        "main",
-      );
+      await d.put("history", { version: 2, messages: [{ wrong: "shape" }] }, T);
     } finally {
       d.close();
     }
-    expect(await loadChat()).toEqual({ version: 1, messages: [] });
+    expect(await loadChat(T)).toEqual({ version: 1, messages: [] });
   });
 
   it("returns empty history on a corrupt (non-array messages) record", async () => {
     const d = await openTrailDb("trail-chat", "history", 1);
     try {
-      await d.put("history", { version: 1, messages: "oops" }, "main");
+      await d.put("history", { version: 1, messages: "oops" }, T);
     } finally {
       d.close();
     }
-    expect(await loadChat()).toEqual({ version: 1, messages: [] });
+    expect(await loadChat(T)).toEqual({ version: 1, messages: [] });
   });
 });
