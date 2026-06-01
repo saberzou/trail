@@ -1,6 +1,5 @@
 "use client";
 
-import { ArrowLeft } from "lucide-react";
 import { nanoid } from "nanoid";
 import {
   type KeyboardEvent,
@@ -11,6 +10,7 @@ import {
   useState,
 } from "react";
 import { createShapeId, type TLShapeId } from "tldraw";
+import { TrailSwitcher } from "@/components/trails/TrailSwitcher";
 import type { SessionRequest } from "@/lib/agent/session";
 import { getCanvasEditor } from "@/lib/canvas/editorRef";
 import { runAgentTurn } from "@/lib/chat/agentBridge";
@@ -308,25 +308,19 @@ export function ChatPanel({
       className="flex h-screen w-[360px] shrink-0 flex-col border-border border-r bg-background text-foreground"
     >
       <header className="shrink-0 border-border border-b px-4 py-3">
-        <div className="flex items-center justify-between">
+        <div className="flex items-center justify-between gap-2">
+          <TrailSwitcher
+            currentTrailId={trailId}
+            currentTrailName={trailName}
+          />
           <a
-            className="-ml-1 inline-flex items-center gap-1 rounded px-1 py-0.5 text-[11px] text-muted-foreground hover:text-foreground"
-            href="/"
-          >
-            <ArrowLeft className="h-3 w-3" />
-            Trails
-          </a>
-          <a
-            className="text-[11px] text-muted-foreground hover:text-foreground"
+            className="shrink-0 text-[11px] text-muted-foreground hover:text-foreground"
             href="/settings"
           >
             Settings
           </a>
         </div>
-        <h1 className="mt-1.5 truncate font-semibold text-[15px] text-foreground">
-          {trailName}
-        </h1>
-        <p className="mt-0.5 text-[12px] text-muted-foreground">
+        <p className="mt-1 text-[12px] text-muted-foreground">
           paste a URL or type a question
         </p>
         {rendererStatus === "checking" ? (

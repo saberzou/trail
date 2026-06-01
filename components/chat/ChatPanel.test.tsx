@@ -22,6 +22,12 @@ vi.mock("@/lib/chat/agentBridge", () => ({
   runAgentTurn: vi.fn(async () => {}),
 }));
 
+// ChatPanel's header now embeds <TrailSwitcher>, which calls useRouter().
+// There's no App Router context in the test renderer, so stub it.
+vi.mock("next/navigation", () => ({
+  useRouter: () => ({ push: vi.fn(), prefetch: vi.fn(), replace: vi.fn() }),
+}));
+
 import { runAgentTurn } from "@/lib/chat/agentBridge";
 import { ChatPanel } from "./ChatPanel";
 
