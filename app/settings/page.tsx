@@ -35,7 +35,7 @@ export default function SettingsPage() {
               aria-hidden="true"
               className="inline-block size-4 rounded bg-primary"
             />
-            <span className="font-medium text-sm">Trail</span>
+            <span className="font-serif font-semibold text-base">Trail</span>
           </div>
         </div>
       </header>
@@ -46,7 +46,9 @@ export default function SettingsPage() {
             Trail Settings
           </p>
           <div className="space-y-2">
-            <h1 className="font-semibold text-3xl">Provider credentials</h1>
+            <h1 className="font-serif font-semibold text-3xl">
+              Provider credentials
+            </h1>
             <p className="text-muted-foreground text-sm">
               Keys never leave your browser.
             </p>

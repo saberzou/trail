@@ -68,7 +68,7 @@ export default function TrailWorkspacePage() {
     return (
       <main className="flex min-h-screen flex-col items-center justify-center gap-4 bg-background px-6 text-center">
         <div className="space-y-1">
-          <h1 className="font-semibold text-2xl">Trail not found</h1>
+          <h1 className="font-serif font-semibold text-2xl">Trail not found</h1>
           <p className="text-muted-foreground text-sm">
             This trail may have been deleted.
           </p>

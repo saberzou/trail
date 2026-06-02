@@ -41,7 +41,7 @@ export function TrailSwitcher({
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
         <Button
-          className="-ml-2 h-7 max-w-[220px] gap-1.5 px-2 font-semibold text-[15px]"
+          className="-ml-2 h-7 max-w-[220px] gap-1.5 px-2 font-serif font-semibold text-[15px]"
           size="sm"
           variant="ghost"
         >
