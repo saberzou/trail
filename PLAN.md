@@ -138,15 +138,60 @@ view over both logs.
 - **shadcn/ui component layer** (`components/ui/*`) on Tailwind v4,
   themed to Trail's warm paper + forest palette via CSS design tokens.
 
-### Beyond PR3
+### PR3.1 — Trail switcher + scenario test coverage (shipped)
 
-- Related-sites embedding ranker so the radial layout is meaningful.
+- In-workspace **trail switcher** in the chat dock (jump between trails,
+  "New trail", "All trails") so you don't round-trip through home.
+- **Flagship scenario tests** (`lib/canvas/scenarios.test.ts`) driving the
+  real `runSessionTurn` pipeline with canned-but-faithful agent streams:
+  "apply for a US visa" → task flow; "sites like nytimes.com" → cluster.
+- **Resilience scenario tests** (`lib/canvas/scenarios-resilience.test.ts`):
+  grounding-failure → downgraded explore cluster; no-fetch → prior-knowledge
+  link cluster; mid-run Stop → friendly "Stopped." with no half-built chain.
+
+### PR4 — next iteration (prioritized)
+
+Grounded in gaps found while testing PR3. Ordered by value/effort.
+
+1. **Surface the downgrade note in chat.** `flow_meta.downgraded` already
+   crosses the wire and `runSessionTurn` forwards it to `onFlowMeta`, but
+   `ChatPanel`'s handler is a no-op — so when a task silently degrades to an
+   explore cluster the user is never told why their "steps" became a loose
+   set. Wire a one-line note ("Couldn't verify sources, showing related
+   pages instead."). *Small; the test hook already exists.*
+2. **Reconcile task-flow orientation.** `PLAN`/PR2c describe a **vertical**
+   top-to-bottom column; the shipped `placeTileInLine` lays tiles **left-to-
+   right**. Pick one (vertical reads more like "steps") and make the doc,
+   code, and arrow routing agree. *Small, but a deliberate product call.*
+3. **Step state (todo / done).** PR2c's promised `stepState` never landed:
+   `WebpageNode` has no done-toggle. Add a `stepState` prop + header toggle
+   for task tiles, persisted in the tldraw snapshot, with optional
+   downstream propagation. *Medium.*
+4. **Tune the iframe load deadline.** The 1.5s `IframeBody` fallback fires on
+   slow networks before a perfectly framable page finishes loading, demoting
+   it to a screenshot/link unnecessarily. Make it adaptive (e.g. 4–5s, or
+   cancel the timer on first `load` progress). *Small.*
+5. **Renderer CORS / CLI port wiring.** The sidecar's CORS allowlist is built
+   from `TRAIL_APP_PORT` (default 3000); when the app runs on another port the
+   browser's `/probe` + `/screenshot` calls are silently blocked and every
+   tile degrades to a link card. Have the `trail` CLI pass the chosen app port
+   through to the renderer. *Small bug fix.*
+6. **Related-sites embedding ranker.** Today the radial cluster spaces tiles
+   uniformly. Rank by similarity to the seed and map similarity → proximity
+   so the layout actually means something. *Medium/large.*
+
+### Backlog
+
 - Multi-tab `BroadcastChannel` sync of canvas + chat state.
 - Cost telemetry (per-session token + screenshot counts) in `/settings`.
 - Sentry (or a slim self-hosted error sink) for the renderer process.
 - Archive snapshots — keep the HTML + screenshot at the time a tile was
   created, so an answer reproduced months later still resolves.
-- Project switcher inside the workspace + JSON export / import of a trail.
+- JSON export / import of a trail; home-page search / filter / reorder.
+- Accessibility pass (focus order, keyboard nav of canvas tiles, ARIA on
+  the switcher).
+- An end-to-end agent test behind an opt-in env flag (real key) so the
+  model + search + quote-validator path has at least one live smoke test.
 
 ---
 
