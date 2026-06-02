@@ -4,72 +4,54 @@
 @custom-variant dark (&:is(.dark *));
 
 /*
- * Trail design tokens. shadcn/ui primitives reference these via the
- * `@theme inline` mapping below (bg-background, text-foreground, bg-primary,
- * border-border, …). The palette is Trail's warm "paper + forest" identity:
- * an off-white parchment ground, near-black ink, and a deep forest-green
- * primary with an olive accent.
+ * Trail design tokens — Tailwind's Neutral (grayscale) palette via shadcn's
+ * canonical neutral theme. Typography: Geist for body/UI, Gelasio for titles
+ * (wired in app/layout.tsx as --font-geist-sans / --font-gelasio).
  */
 :root {
   --radius: 0.625rem;
 
-  --background: oklch(0.974 0.006 95);
-  --foreground: oklch(0.205 0.012 110);
-
-  --card: oklch(0.995 0.004 95);
-  --card-foreground: oklch(0.205 0.012 110);
-
-  --popover: oklch(0.995 0.004 95);
-  --popover-foreground: oklch(0.205 0.012 110);
-
-  --primary: oklch(0.33 0.04 140);
-  --primary-foreground: oklch(0.98 0.006 95);
-
-  --secondary: oklch(0.93 0.01 95);
-  --secondary-foreground: oklch(0.28 0.02 130);
-
-  --muted: oklch(0.94 0.008 95);
-  --muted-foreground: oklch(0.51 0.015 110);
-
-  --accent: oklch(0.91 0.018 120);
-  --accent-foreground: oklch(0.28 0.025 130);
-
-  --destructive: oklch(0.52 0.18 27);
-  --destructive-foreground: oklch(0.98 0.006 95);
-
-  --border: oklch(0.88 0.01 100);
-  --input: oklch(0.88 0.01 100);
-  --ring: oklch(0.55 0.04 140);
+  --background: oklch(1 0 0);
+  --foreground: oklch(0.145 0 0);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.145 0 0);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.145 0 0);
+  --primary: oklch(0.205 0 0);
+  --primary-foreground: oklch(0.985 0 0);
+  --secondary: oklch(0.97 0 0);
+  --secondary-foreground: oklch(0.205 0 0);
+  --muted: oklch(0.97 0 0);
+  --muted-foreground: oklch(0.556 0 0);
+  --accent: oklch(0.97 0 0);
+  --accent-foreground: oklch(0.205 0 0);
+  --destructive: oklch(0.577 0.245 27.325);
+  --destructive-foreground: oklch(0.985 0 0);
+  --border: oklch(0.922 0 0);
+  --input: oklch(0.922 0 0);
+  --ring: oklch(0.708 0 0);
 }
 
 .dark {
-  --background: oklch(0.18 0.01 120);
-  --foreground: oklch(0.95 0.006 95);
-
-  --card: oklch(0.22 0.012 120);
-  --card-foreground: oklch(0.95 0.006 95);
-
-  --popover: oklch(0.22 0.012 120);
-  --popover-foreground: oklch(0.95 0.006 95);
-
-  --primary: oklch(0.72 0.06 140);
-  --primary-foreground: oklch(0.18 0.02 130);
-
-  --secondary: oklch(0.28 0.012 120);
-  --secondary-foreground: oklch(0.95 0.006 95);
-
-  --muted: oklch(0.28 0.012 120);
-  --muted-foreground: oklch(0.68 0.012 110);
-
-  --accent: oklch(0.32 0.02 130);
-  --accent-foreground: oklch(0.95 0.006 95);
-
-  --destructive: oklch(0.62 0.19 27);
-  --destructive-foreground: oklch(0.98 0.006 95);
-
-  --border: oklch(1 0 0 / 12%);
-  --input: oklch(1 0 0 / 16%);
-  --ring: oklch(0.55 0.05 140);
+  --background: oklch(0.145 0 0);
+  --foreground: oklch(0.985 0 0);
+  --card: oklch(0.205 0 0);
+  --card-foreground: oklch(0.985 0 0);
+  --popover: oklch(0.205 0 0);
+  --popover-foreground: oklch(0.985 0 0);
+  --primary: oklch(0.922 0 0);
+  --primary-foreground: oklch(0.205 0 0);
+  --secondary: oklch(0.269 0 0);
+  --secondary-foreground: oklch(0.985 0 0);
+  --muted: oklch(0.269 0 0);
+  --muted-foreground: oklch(0.708 0 0);
+  --accent: oklch(0.269 0 0);
+  --accent-foreground: oklch(0.985 0 0);
+  --destructive: oklch(0.704 0.191 22.216);
+  --destructive-foreground: oklch(0.985 0 0);
+  --border: oklch(1 0 0 / 10%);
+  --input: oklch(1 0 0 / 15%);
+  --ring: oklch(0.556 0 0);
 }
 
 @theme inline {
@@ -93,6 +75,10 @@
   --color-input: var(--input);
   --color-ring: var(--ring);
 
+  --font-sans: var(--font-geist-sans), ui-sans-serif, system-ui, -apple-system,
+    "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  --font-serif: var(--font-gelasio), Georgia, Cambria, "Times New Roman", serif;
+
   --radius-sm: calc(var(--radius) - 4px);
   --radius-md: calc(var(--radius) - 2px);
   --radius-lg: var(--radius);
@@ -112,9 +98,7 @@ body {
   margin: 0;
   background: var(--background);
   color: var(--foreground);
-  font-family:
-    ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Helvetica,
-    Arial, sans-serif;
+  font-family: var(--font-sans);
 }
 
 * {
@@ -123,4 +107,10 @@ body {
 
 a {
   color: inherit;
+}
+
+/* Lucide icons: a lighter 1.2px stroke across the whole app. The CSS property
+ * overrides Lucide's default stroke-width="2" presentation attribute. */
+.lucide {
+  stroke-width: 1.2px;
 }

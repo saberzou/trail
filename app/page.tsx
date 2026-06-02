@@ -49,7 +49,9 @@ export default function HomePage() {
               aria-hidden="true"
               className="inline-block size-5 rounded-md bg-primary"
             />
-            <span className="font-semibold text-lg tracking-tight">Trail</span>
+            <span className="font-serif font-semibold text-xl tracking-tight">
+              Trail
+            </span>
           </div>
           <Button asChild size="sm" variant="ghost">
             <Link href="/settings">
@@ -63,7 +65,7 @@ export default function HomePage() {
       <section className="mx-auto max-w-6xl px-6 py-10">
         <div className="flex flex-wrap items-end justify-between gap-4">
           <div className="space-y-1">
-            <h1 className="font-semibold text-3xl tracking-tight">
+            <h1 className="font-serif font-semibold text-3xl tracking-tight">
               Your trails
             </h1>
             <p className="text-muted-foreground text-sm">
@@ -109,7 +111,9 @@ function EmptyState({ dialog }: { dialog: React.ReactNode }) {
   return (
     <div className="flex flex-col items-center justify-center gap-5 rounded-xl border border-border border-dashed bg-card/40 px-6 py-20 text-center">
       <div className="space-y-1.5">
-        <h2 className="font-semibold text-xl">Start your first trail</h2>
+        <h2 className="font-serif font-semibold text-xl">
+          Start your first trail
+        </h2>
         <p className="mx-auto max-w-sm text-muted-foreground text-sm">
           Create a trail to open a fresh spatial canvas and chat with the agent
           about a single task or topic.
