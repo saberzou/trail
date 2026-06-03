@@ -1,3 +1,4 @@
+import { ExternalLink } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import type {
   WebpageNodeMode,
@@ -40,35 +41,32 @@ export function WebpageNode({ shape }: WebpageNodeProps) {
 
   return (
     <article
-      className="flex h-full w-full flex-col overflow-hidden rounded-lg border border-[#c9c8bd] bg-white shadow-[0_8px_24px_rgba(23,24,20,0.12)]"
+      className="flex h-full w-full flex-col overflow-hidden rounded-xl border border-border bg-card shadow-md"
       style={{ width: w, height: h }}
     >
-      <header className="flex h-9 shrink-0 items-center gap-2 border-[#ece9dd] border-b bg-[#f7f7f2] px-3">
+      <header className="flex h-9 shrink-0 items-center gap-2 border-border border-b bg-muted px-3">
         <Favicon hostname={hostname} />
         <span
-          className="min-w-0 flex-1 truncate text-[13px] font-medium text-[#171814]"
+          className="min-w-0 flex-1 truncate font-serif text-[13px] font-medium text-foreground"
           title={title || hostname}
         >
           {title || hostname || "Untitled"}
         </span>
-        <span className="shrink-0 rounded bg-[#ece9dd] px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-[#5d6256]">
-          {hostname}
-        </span>
-        <span className="shrink-0 rounded bg-[#e6e9dd] px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-[#5d6256]">
+        <span className="shrink-0 rounded bg-secondary px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
           {mode}
         </span>
         <a
           aria-label="Open URL in new tab"
-          className="shrink-0 rounded px-1 text-[#5d6256] hover:bg-[#ece9dd] hover:text-[#171814]"
+          className="flex size-6 shrink-0 items-center justify-center rounded text-muted-foreground hover:bg-accent hover:text-foreground"
           href={url}
           onPointerDown={(e) => e.stopPropagation()}
           rel="noopener noreferrer"
           target="_blank"
         >
-          {"↗"}
+          <ExternalLink className="size-3.5" />
         </a>
       </header>
-      <div className="relative min-h-0 flex-1 overflow-hidden bg-[#f4f1e8]">
+      <div className="relative min-h-0 flex-1 overflow-hidden bg-muted">
         <RenderBody
           shape={shape}
           onError={() => switchMode("link")}
@@ -198,7 +196,7 @@ function ScreenshotImg({ url, onError }: { url: string; onError: () => void }) {
     return (
       <div
         aria-label="Loading screenshot"
-        className="flex h-full w-full items-center justify-center text-[12px] text-[#5d6256]"
+        className="flex h-full w-full items-center justify-center text-[12px] text-muted-foreground"
         role="status"
       >
         <span className="animate-pulse">loading preview...</span>
@@ -234,16 +232,18 @@ function LinkCard({
   url?: string;
 }) {
   return (
-    <div className="flex h-full w-full flex-col gap-1.5 bg-[#f7f7f2] px-4 py-3">
-      <p className="text-[10px] font-semibold uppercase tracking-wider text-[#5d6256]">
+    <div className="flex h-full w-full flex-col gap-1.5 bg-card px-4 py-3">
+      <p className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
         {hostname}
       </p>
       {summary ? (
-        <p className="line-clamp-6 text-[12px] leading-snug text-[#3a3d35]">
+        <p className="line-clamp-6 text-[12px] leading-snug text-foreground/80">
           {summary}
         </p>
       ) : (
-        <p className="text-[12px] text-[#8a8d80]">No preview available.</p>
+        <p className="text-[12px] text-muted-foreground/70">
+          No preview available.
+        </p>
       )}
     </div>
   );
