@@ -114,3 +114,25 @@ a {
 .lucide {
   stroke-width: 1.2px;
 }
+
+/* tldraw canvas chrome — light-touch neutral theming. tldraw's default light
+ * theme has a faint blue tint on the canvas/surfaces and a blue selection
+ * accent; we re-point just those tokens (not individual toolbar buttons) to
+ * Trail's neutral grays so the canvas matches the rest of the app. Compound
+ * selector (.tl-container.tl-theme__*) outranks tldraw's single-class rule. */
+.tl-container.tl-theme__light {
+  --color-background: hsl(0 0% 97%) !important;
+  --color-low: hsl(0 0% 94.5%) !important;
+  --color-low-border: hsl(0 0% 92%) !important;
+  --color-panel: hsl(0 0% 100%) !important;
+  --color-selected: hsl(0 0% 18%) !important;
+}
+.tl-container.tl-theme__dark {
+  --color-background: hsl(0 0% 9%) !important;
+  --color-low: hsl(0 0% 12%) !important;
+  --color-low-border: hsl(0 0% 16%) !important;
+  --color-panel: hsl(0 0% 14%) !important;
+  --color-selected: hsl(0 0% 92%) !important;
+  --color-selected-contrast: hsl(0 0% 9%) !important;
+}
+
