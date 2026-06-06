@@ -121,7 +121,11 @@ start_server() {
   trap 'rm -f "$PID_FILE.lock"' RETURN
   log "starting dev server on :$PORT ..."
   printf "\n==== trail %s %s ====\n" "server-start" "$(date +%FT%T)" >>"$LOG_FILE"
-  ( cd "$REPO_DIR" && nohup pnpm dev --hostname "$HOST" --port "$PORT" \
+  # Tell the browser bundle where the renderer lives so a non-default
+  # TRAIL_RENDERER_PORT still reaches the sidecar (the client defaults to
+  # :3001 otherwise, and probes/screenshots would silently fail).
+  ( cd "$REPO_DIR" && NEXT_PUBLIC_TRAIL_RENDERER_URL="http://${HOST}:${RENDERER_PORT}" \
+      nohup pnpm dev --hostname "$HOST" --port "$PORT" \
       >>"$LOG_FILE" 2>&1 & echo $! >"$PID_FILE" )
   rm -f "$PID_FILE.lock"
 
