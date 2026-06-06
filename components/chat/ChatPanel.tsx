@@ -11,6 +11,7 @@ import {
 } from "react";
 import { createShapeId, type TLShapeId } from "tldraw";
 import { TrailSwitcher } from "@/components/trails/TrailSwitcher";
+import { looksAuthWalled } from "@/lib/agent/auth-wall";
 import type { SessionRequest } from "@/lib/agent/session";
 import { getCanvasEditor } from "@/lib/canvas/editorRef";
 import { runAgentTurn } from "@/lib/chat/agentBridge";
@@ -660,8 +661,13 @@ async function handleUrl(
     return { ok: false };
   }
 
-  const { iframeable } = await probeUrl(url);
-  const mode = iframeable ? "iframe" : "screenshot";
+  // Sign-in pages preview as a blank/login form, so skip the renderer probe
+  // and drop straight to a link card the user can open in their own session.
+  const authWalled = looksAuthWalled(url);
+  const { iframeable } = authWalled
+    ? { iframeable: false }
+    : await probeUrl(url);
+  const mode = authWalled ? "link" : iframeable ? "iframe" : "screenshot";
   const hostname = safeHostname(url);
 
   // Place the tile at the center of the current viewport. tldraw's coordinate

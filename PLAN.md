@@ -153,32 +153,29 @@ view over both logs.
 
 Grounded in gaps found while testing PR3. Ordered by value/effort.
 
-1. **Surface the downgrade note in chat.** `flow_meta.downgraded` already
-   crosses the wire and `runSessionTurn` forwards it to `onFlowMeta`, but
-   `ChatPanel`'s handler is a no-op — so when a task silently degrades to an
-   explore cluster the user is never told why their "steps" became a loose
-   set. Wire a one-line note ("Couldn't verify sources, showing related
-   pages instead."). *Small; the test hook already exists.*
-2. **Reconcile task-flow orientation.** `PLAN`/PR2c describe a **vertical**
-   top-to-bottom column; the shipped `placeTileInLine` lays tiles **left-to-
-   right**. Pick one (vertical reads more like "steps") and make the doc,
-   code, and arrow routing agree. *Small, but a deliberate product call.*
-3. **Step state (todo / done).** PR2c's promised `stepState` never landed:
-   `WebpageNode` has no done-toggle. Add a `stepState` prop + header toggle
-   for task tiles, persisted in the tldraw snapshot, with optional
-   downstream propagation. *Medium.*
+1. ~~**Surface the downgrade note in chat.**~~ ✅ Shipped — `ChatPanel` now
+   posts a one-line note when a task downgrades to an explore cluster.
+2. ~~**Reconcile task-flow orientation.**~~ ✅ Shipped — task flows now lay
+   out as a **vertical** top-to-bottom column (`placeTileInColumn`); doc,
+   code, and arrow routing agree.
+3. ~~**Step state (todo / done).**~~ ✅ Shipped — optional `stepState` prop +
+   header done-toggle (strikes the title, dims the tile). Downstream
+   propagation still TODO.
 4. **Tune the iframe load deadline.** The 1.5s `IframeBody` fallback fires on
    slow networks before a perfectly framable page finishes loading, demoting
    it to a screenshot/link unnecessarily. Make it adaptive (e.g. 4–5s, or
    cancel the timer on first `load` progress). *Small.*
-5. **Renderer CORS / CLI port wiring.** The sidecar's CORS allowlist is built
-   from `TRAIL_APP_PORT` (default 3000); when the app runs on another port the
-   browser's `/probe` + `/screenshot` calls are silently blocked and every
-   tile degrades to a link card. Have the `trail` CLI pass the chosen app port
-   through to the renderer. *Small bug fix.*
-6. **Related-sites embedding ranker.** Today the radial cluster spaces tiles
+5. ~~**Renderer CORS / CLI port wiring.**~~ ✅ Shipped — the `trail` CLI now
+   passes the renderer URL to the browser bundle; plus a Chromium watchdog.
+6. ~~**Auth-wall classifier.**~~ ✅ Shipped — `looksAuthWalled` (high-precision
+   heuristic) downgrades obvious sign-in URLs to `link` tiles in both the
+   agent's `nodeFromStep` and the URL-paste path.
+7. **Related-sites embedding ranker.** Today the radial cluster spaces tiles
    uniformly. Rank by similarity to the seed and map similarity → proximity
-   so the layout actually means something. *Medium/large.*
+   so the layout actually means something. *Medium/large. (Needs an
+   embeddings API — same egress/keys constraint as the agent.)*
+8. **Downstream done-propagation.** Marking a task step done could cascade /
+   visually de-emphasize later steps. Needs the per-run flow graph. *Medium.*
 
 ### Backlog
 

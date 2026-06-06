@@ -152,6 +152,30 @@ describe("ChatPanel", () => {
     expect(await screen.findByText(/Added example\.com/i)).toBeInTheDocument();
   });
 
+  it("a pasted sign-in URL becomes a link tile without probing the renderer", async () => {
+    const fetchMock = vi.fn(async (_input: RequestInfo | URL) =>
+      jsonResponse({ iframeable: true }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(React.createElement(ChatPanel, TEST_PROPS));
+    const textarea = await screen.findByLabelText("Message input");
+    fireEvent.change(textarea, {
+      target: { value: "https://accounts.google.com/signin" },
+    });
+    fireEvent.submit(textarea.closest("form")!);
+
+    await waitFor(() => {
+      expect(editor.createShape).toHaveBeenCalledTimes(1);
+    });
+    expect(editor.createShape.mock.calls[0][0].props.mode).toBe("link");
+    // Auth walls skip the renderer probe entirely.
+    const probed = fetchMock.mock.calls.some(([u]) =>
+      String(u).endsWith("/probe"),
+    );
+    expect(probed).toBe(false);
+  });
+
   it("iframeable URL creates the shape in iframe mode", async () => {
     vi.stubGlobal(
       "fetch",

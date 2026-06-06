@@ -40,6 +40,7 @@ import {
 import { nanoid } from "nanoid";
 import { z } from "zod";
 import type { ChatMessage } from "@/lib/chat/persistence";
+import { looksAuthWalled } from "./auth-wall";
 import { formatValidationErrors, validateFlowPlan } from "./flow-validator";
 import { makeFetchUrlTool, makeWebSearchTool } from "./tools";
 
@@ -153,13 +154,17 @@ export function nodeFromStep(step: {
   instruction: string;
   requiresLogin: boolean;
 }): Extract<SessionEvent, { kind: "node" }> {
+  // Ship as a link tile when the model flags a login wall OR the URL itself
+  // looks like a sign-in surface (catches walls the model missed — there's
+  // nothing useful to screenshot/iframe behind them).
+  const isLink = step.requiresLogin || looksAuthWalled(step.url);
   return {
     kind: "node",
     nodeId: nanoid(10),
     title: step.title,
     url: step.url,
     hostname: safeHostname(step.url),
-    mode: step.requiresLogin ? "link" : "screenshot",
+    mode: isLink ? "link" : "screenshot",
     summary: step.instruction,
   };
 }

@@ -488,4 +488,14 @@ describe("nodeFromStep", () => {
     // safeHostname strips the leading www.
     expect(ev.hostname).toBe("example.gov");
   });
+
+  it("force-links a sign-in URL even when the model forgot requiresLogin", () => {
+    const ev = nodeFromStep({
+      title: "Sign in",
+      url: "https://accounts.google.com/signin",
+      instruction: "Sign in to continue.",
+      requiresLogin: false,
+    });
+    expect(ev.mode).toBe("link");
+  });
 });
