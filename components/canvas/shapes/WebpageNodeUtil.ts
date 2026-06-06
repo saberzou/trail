@@ -20,6 +20,14 @@ import { WebpageNode } from "@/components/canvas/shapes/WebpageNode";
  */
 export type WebpageNodeMode = "iframe" | "screenshot" | "link";
 
+/**
+ * Per-tile completion state, surfaced as a done-toggle in the tile header.
+ * Meant for task-flow steps but available on any tile. Optional so older
+ * persisted snapshots (which predate it) still validate — a missing value
+ * reads as "todo".
+ */
+export type WebpageNodeStepState = "todo" | "done";
+
 export type WebpageNodeShape = TLBaseShape<
   "webpage",
   {
@@ -30,6 +38,7 @@ export type WebpageNodeShape = TLBaseShape<
     hostname: string;
     mode: WebpageNodeMode;
     summary?: string;
+    stepState?: WebpageNodeStepState;
   }
 >;
 
@@ -47,6 +56,7 @@ export class WebpageNodeUtil extends ShapeUtil<WebpageNodeShape> {
     hostname: T.string,
     mode: T.literalEnum("iframe", "screenshot", "link"),
     summary: T.optional(T.string),
+    stepState: T.optional(T.literalEnum("todo", "done")),
   };
 
   override canResize = () => true;

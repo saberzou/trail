@@ -13,7 +13,8 @@
     "renderer": "node scripts/trail-renderer.mjs",
     "lint": "biome check .",
     "format": "biome format --write .",
-    "test": "vitest"
+    "test": "vitest",
+    "test:live": "TRAIL_TEST_LIVE=1 vitest run lib/agent/session.live.test.ts"
   },
   "dependencies": {
     "@ai-sdk/anthropic": "^3.0.79",

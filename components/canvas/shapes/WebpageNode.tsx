@@ -1,4 +1,4 @@
-import { ExternalLink } from "lucide-react";
+import { Check, ExternalLink } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import type {
   WebpageNodeMode,
@@ -23,10 +23,11 @@ function faviconUrl(hostname: string): string {
 type WebpageNodeProps = { shape: WebpageNodeShape };
 
 export function WebpageNode({ shape }: WebpageNodeProps) {
-  const { mode, url, title, hostname, w, h } = shape.props;
+  const { mode, url, title, hostname, w, h, stepState } = shape.props;
   // `summary` is intentionally not destructured here — link-mode polish
   // (PR2c) routes summary text through the LinkCard body instead of
   // duplicating it in a footer below the screenshot/iframe pane.
+  const done = stepState === "done";
 
   const switchMode = (next: WebpageNodeMode) => {
     if (next === mode) return;
@@ -39,15 +40,40 @@ export function WebpageNode({ shape }: WebpageNodeProps) {
     });
   };
 
+  const toggleDone = () => {
+    const editor = getCanvasEditor();
+    if (!editor) return;
+    editor.updateShape({
+      id: shape.id,
+      type: "webpage",
+      props: { ...shape.props, stepState: done ? "todo" : "done" },
+    });
+  };
+
   return (
     <article
-      className="flex h-full w-full flex-col overflow-hidden rounded-xl border border-border bg-card shadow-md"
+      className={`flex h-full w-full flex-col overflow-hidden rounded-xl border border-border bg-card shadow-md transition-opacity ${
+        done ? "opacity-60" : ""
+      }`}
       style={{ width: w, height: h }}
     >
       <header className="flex h-9 shrink-0 items-center gap-2 border-border border-b bg-muted px-3">
+        <button
+          aria-label={done ? "Mark step as not done" : "Mark step as done"}
+          aria-pressed={done}
+          className="flex size-5 shrink-0 items-center justify-center rounded-full border border-border text-background transition-colors hover:border-foreground data-[done=true]:border-foreground data-[done=true]:bg-foreground"
+          data-done={done}
+          onClick={toggleDone}
+          onPointerDown={(e) => e.stopPropagation()}
+          type="button"
+        >
+          {done ? <Check className="size-3" /> : null}
+        </button>
         <Favicon hostname={hostname} />
         <span
-          className="min-w-0 flex-1 truncate font-serif text-[13px] font-medium text-foreground"
+          className={`min-w-0 flex-1 truncate font-serif text-[13px] font-medium ${
+            done ? "text-muted-foreground line-through" : "text-foreground"
+          }`}
           title={title || hostname}
         >
           {title || hostname || "Untitled"}
