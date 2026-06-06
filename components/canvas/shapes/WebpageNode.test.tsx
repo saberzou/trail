@@ -76,6 +76,38 @@ describe("WebpageNode", () => {
     expect(openLinks.length).toBe(1);
   });
 
+  it("renders a done-toggle that flips stepState to 'done' via updateShape", () => {
+    const updateShape = vi.fn();
+    setCanvasEditor({
+      updateShape,
+    } as unknown as Parameters<typeof setCanvasEditor>[0]);
+    render(
+      React.createElement(WebpageNode, {
+        shape: makeShape({ mode: "link", title: "Step one" }),
+      }),
+    );
+    const toggle = screen.getByRole("button", { name: /mark step as done/i });
+    fireEvent.click(toggle);
+    expect(updateShape).toHaveBeenCalledTimes(1);
+    expect(updateShape.mock.calls[0][0].props.stepState).toBe("done");
+  });
+
+  it("a done tile shows a struck-through title and offers to un-complete", () => {
+    render(
+      React.createElement(WebpageNode, {
+        shape: makeShape({
+          mode: "link",
+          title: "Step one",
+          stepState: "done",
+        }),
+      }),
+    );
+    expect(
+      screen.getByRole("button", { name: /mark step as not done/i }),
+    ).toBeInTheDocument();
+    expect(screen.getByText("Step one").className).toMatch(/line-through/);
+  });
+
   it("renders a favicon img in the header with the s2 favicon service URL", () => {
     const { container } = render(
       React.createElement(WebpageNode, {

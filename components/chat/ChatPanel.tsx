@@ -576,6 +576,10 @@ async function handleAgent(
   // per successful createShape.
   let tileCount = 0;
   let lastError: string | null = null;
+  // Set when the agent couldn't ground a task plan and fell back to an
+  // explore cluster, so we can tell the user why their "steps" became a
+  // loose set of related pages instead of going silent.
+  let downgraded = false;
 
   const controller = new AbortController();
   abortRef.current = controller;
@@ -587,9 +591,8 @@ async function handleAgent(
         m.id === placeholderId ? { ...m, text: liveText } : m,
       );
     },
-    onFlowMeta: () => {
-      // Layout topology is selected inside runSessionTurn from the
-      // intent on this event; nothing to do here.
+    onFlowMeta: (_intent, wasDowngraded) => {
+      if (wasDowngraded) downgraded = true;
     },
     onNode: () => {
       tileCount += 1;
@@ -619,6 +622,15 @@ async function handleAgent(
     updateMessage((m) =>
       m.id === placeholderId ? { ...m, text: tileLine } : m,
     );
+  }
+
+  if (downgraded) {
+    push({
+      id: nanoid(),
+      role: "assistant",
+      text: "I couldn't verify step-by-step sources for this, so I've laid out related pages to explore instead.",
+      createdAt: Date.now(),
+    });
   }
 }
 

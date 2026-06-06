@@ -245,6 +245,43 @@ describe("ChatPanel", () => {
     expect(dones.length).toBeGreaterThan(0);
   });
 
+  it("surfaces a downgrade note when the agent falls back to an explore cluster", async () => {
+    configureProvider();
+    vi.mocked(runAgentTurn).mockImplementation(
+      async (_editor, _req, _signal, callbacks) => {
+        // A task that failed grounding: server re-emits explore + downgraded.
+        callbacks?.onFlowMeta?.("explore", true);
+        callbacks?.onNode?.();
+        callbacks?.onNode?.();
+        callbacks?.onDone?.();
+      },
+    );
+    render(React.createElement(ChatPanel, TEST_PROPS));
+    const textarea = await screen.findByLabelText("Message input");
+    fireEvent.change(textarea, { target: { value: "how do I incorporate" } });
+    fireEvent.submit(textarea.closest("form")!);
+    expect(
+      await screen.findByText(/related pages to explore instead/i),
+    ).toBeInTheDocument();
+  });
+
+  it("does NOT show a downgrade note on a normal (non-downgraded) turn", async () => {
+    configureProvider();
+    vi.mocked(runAgentTurn).mockImplementation(
+      async (_editor, _req, _signal, callbacks) => {
+        callbacks?.onFlowMeta?.("task", false);
+        callbacks?.onNode?.();
+        callbacks?.onDone?.();
+      },
+    );
+    render(React.createElement(ChatPanel, TEST_PROPS));
+    const textarea = await screen.findByLabelText("Message input");
+    fireEvent.change(textarea, { target: { value: "apply for a visa" } });
+    fireEvent.submit(textarea.closest("form")!);
+    await screen.findByText(/Done — added 1 tile/i);
+    expect(screen.queryByText(/related pages to explore instead/i)).toBeNull();
+  });
+
   it("free-form text with NO provider configured shows the settings hint", async () => {
     // No providers seeded; clearProviders() ran in beforeEach.
     render(React.createElement(ChatPanel, TEST_PROPS));

@@ -4,14 +4,15 @@
 // verbatim-quote validator). This is the ONE path the offline scenario tests
 // can't cover, because it actually calls a provider.
 //
-// It is opt-in and SKIPPED unless a key is present in the environment, so
-// normal `pnpm test` and CI stay hermetic and free. To run it:
+// It is opt-in: the default `pnpm test` EXCLUDES `*.live.test.ts` (see
+// vitest.config.ts), and even when run it SKIPS unless a key is present. Run
+// it explicitly with:
 //
 //   TRAIL_LIVE_API_KEY=sk-...            # required
-//   TRAIL_LIVE_PROVIDER=openai           # openai | anthropic | google | deepseek (default openai)
+//   TRAIL_LIVE_PROVIDER=deepseek         # openai | anthropic | google | deepseek (default openai)
 //   TRAIL_LIVE_SEARCH=brave              # optional: brave | tavily
 //   TRAIL_LIVE_SEARCH_KEY=...            # required iff TRAIL_LIVE_SEARCH is set
-//   pnpm exec vitest run lib/agent/session.live.test.ts
+//   pnpm test:live
 //
 // Keep the key in your shell env (or a gitignored .env) — never commit it.
 import { describe, expect, it } from "vitest";
