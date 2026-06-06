@@ -85,7 +85,7 @@ function streamFile(res, filePath, size) {
   createReadStream(filePath).pipe(res);
 }
 
-async function handleScreenshot(req, res, browser) {
+async function handleScreenshot(req, res, getBrowser) {
   // CORS goes first — even on early-exit error paths the browser needs
   // these headers, otherwise it surfaces "CORS error" instead of the
   // real status code.
@@ -130,6 +130,9 @@ async function handleScreenshot(req, res, browser) {
   // `newContext` itself throwing (browser closed mid-request).
   let context;
   try {
+    // Pull a live browser — relaunches transparently if Chromium has died
+    // since the last request (watchdog).
+    const browser = await getBrowser();
     context = await browser.newContext({ viewport });
     const page = await context.newPage();
     await page.goto(url, { timeout: SHOT_TIMEOUT_MS, waitUntil: "load" });
@@ -201,7 +204,7 @@ function handleOptions(req, res) {
   res.end();
 }
 
-async function makeHandler(browser) {
+async function makeHandler(getBrowser) {
   return async (req, res) => {
     try {
       // Dispatcher-level CORS so every response (including 404 and
@@ -219,7 +222,7 @@ async function makeHandler(browser) {
         return;
       }
       if (method === "POST" && url.pathname === "/screenshot") {
-        await handleScreenshot(req, res, browser);
+        await handleScreenshot(req, res, getBrowser);
         return;
       }
       if (method === "POST" && url.pathname === "/probe") {
@@ -243,10 +246,36 @@ async function makeHandler(browser) {
 
 async function main() {
   await mkdir(CACHE_DIR, { recursive: true });
-  // Launch chromium BEFORE listen() so the first /screenshot call doesn't pay
-  // for cold-start (~1-2s) and time out the caller's probe.
-  const browser = await chromium.launch({ headless: true });
-  const handler = await makeHandler(browser);
+
+  // Self-healing browser: keep one Chromium alive, but transparently relaunch
+  // if it crashes or is killed (OOM, `pkill chrome`, GPU hang). Without this a
+  // dead Chromium meant every subsequent /screenshot failed until the operator
+  // restarted the whole sidecar.
+  let browser = null;
+  const launch = async () => {
+    const b = await chromium.launch({ headless: true });
+    b.on("disconnected", () => {
+      if (browser === b) {
+        browser = null;
+        console.warn(
+          "[trail-renderer] chromium disconnected — relaunching on next request",
+        );
+      }
+    });
+    return b;
+  };
+  const getBrowser = async () => {
+    if (!browser || !browser.isConnected()) {
+      browser = await launch();
+      console.log("[trail-renderer] chromium ready");
+    }
+    return browser;
+  };
+
+  // Launch BEFORE listen() so the first /screenshot call doesn't pay for
+  // cold-start (~1-2s) and time out the caller's probe.
+  browser = await launch();
+  const handler = await makeHandler(getBrowser);
   const server = http.createServer(handler);
 
   server.listen(PORT, HOST, () => {
@@ -265,7 +294,7 @@ async function main() {
     timer.unref();
     try {
       await new Promise((resolve) => server.close(() => resolve()));
-      await browser.close().catch(() => {});
+      await browser?.close().catch(() => {});
     } finally {
       clearTimeout(timer);
       process.exit(0);

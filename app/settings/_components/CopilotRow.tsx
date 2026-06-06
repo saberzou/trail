@@ -112,6 +112,12 @@ export function CopilotRow() {
         </div>
       </div>
 
+      <p className="text-muted-foreground text-xs">
+        Note: Copilot isn't wired into the canvas agent yet — choose OpenAI,
+        Anthropic, Gemini, or DeepSeek above to run flows and clusters. Sign-in
+        here still works for connection testing.
+      </p>
+
       {flow ? (
         <div className="rounded border border-[#d9d8cc] bg-[#fbfaf4] p-3 text-sm">
           <p className="text-[#4c5145]">Enter this code on GitHub:</p>
