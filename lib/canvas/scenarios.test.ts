@@ -3,7 +3,7 @@
 // Flagship scenario tests for the two things Trail's agent is *for*:
 //
 //   1. "apply for a US visa"  → a TASK flow: ordered, authoritative sites laid
-//      out as a left-to-right chain of steps wired by arrows.
+//      out as a top-to-bottom column of steps wired by arrows.
 //   2. "sites like nytimes.com" → an EXPLORE cluster: related sites fanned in a
 //      radial ring around the seed tile, each joined to it by a spoke arrow.
 //
@@ -19,7 +19,7 @@ import { _resetLayoutStates, runSessionTurn } from "./agentClient";
 
 const TILE_W = 320;
 const TILE_H = 220;
-const LINE_STEP = 360;
+const COLUMN_STEP = 260;
 const RADIAL_RADIUS = 360;
 
 type MockEditor = {
@@ -123,7 +123,7 @@ describe("scenario: apply for a US visa → task flow", () => {
     { kind: "done", runId: "visa-run" },
   ];
 
-  it("lays the steps out as an ordered left-to-right chain with connecting arrows", async () => {
+  it("lays the steps out as an ordered top-to-bottom column with connecting arrows", async () => {
     const editor = makeEditor({ x: 0, y: 0 });
     const fetchMock = vi.fn(async () => sseResponse(visaFlow));
 
@@ -153,10 +153,10 @@ describe("scenario: apply for a US visa → task flow", () => {
     expect(tiles[0].props.url).toContain("travel.state.gov");
     expect(tiles[1].props.url).toContain("ceac.state.gov");
 
-    // Steps march left-to-right at a constant y (a readable flow).
+    // Steps march top-to-bottom at a constant x (a readable checklist).
     for (let i = 1; i < tiles.length; i++) {
-      expect(tiles[i].x - tiles[i - 1].x).toBe(LINE_STEP);
-      expect(tiles[i].y).toBe(tiles[0].y);
+      expect(tiles[i].y - tiles[i - 1].y).toBe(COLUMN_STEP);
+      expect(tiles[i].x).toBe(tiles[0].x);
     }
 
     // Login/form-walled steps degrade to link tiles (wider 360×200), the rest

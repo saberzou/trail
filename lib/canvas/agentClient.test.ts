@@ -5,7 +5,7 @@ import type { SessionEvent, SessionRequest } from "@/lib/agent/session";
 import {
   _getLayoutStateCount,
   _resetLayoutStates,
-  placeTileInLine,
+  placeTileInColumn,
   placeTileInRadial,
   runSessionTurn,
   streamSession,
@@ -85,25 +85,25 @@ describe("streamSession", () => {
   });
 });
 
-describe("placeTileInLine", () => {
-  it("returns positions that step horizontally with constant y", () => {
+describe("placeTileInColumn", () => {
+  it("returns positions that step vertically with constant x", () => {
     const state = {
       intent: "task" as const,
       anchorX: 100,
       anchorY: 200,
       cursor: 0,
     };
-    const a = placeTileInLine(state, 0);
-    const b = placeTileInLine(state, 1);
-    const c = placeTileInLine(state, 2);
-    // y is constant: anchorY - TILE_H/2 = 200 - 110 = 90.
-    expect(a.y).toBe(90);
-    expect(b.y).toBe(90);
-    expect(c.y).toBe(90);
-    // x steps 360 (TILE_W=320 + 40 gap) starting at anchorX - TILE_W/2.
-    expect(a.x).toBe(100 - 160);
-    expect(b.x - a.x).toBe(360);
-    expect(c.x - b.x).toBe(360);
+    const a = placeTileInColumn(state, 0);
+    const b = placeTileInColumn(state, 1);
+    const c = placeTileInColumn(state, 2);
+    // x is constant: anchorX - TILE_W/2 = 100 - 160 = -60.
+    expect(a.x).toBe(-60);
+    expect(b.x).toBe(-60);
+    expect(c.x).toBe(-60);
+    // y steps 260 (TILE_H=220 + 40 gap) starting at anchorY - TILE_H/2 = 90.
+    expect(a.y).toBe(200 - 110);
+    expect(b.y - a.y).toBe(260);
+    expect(c.y - b.y).toBe(260);
   });
 });
 
@@ -215,7 +215,7 @@ describe("runSessionTurn", () => {
     expect(error).not.toHaveBeenCalled();
   });
 
-  it("task intent: tiles arrange horizontally and arrows chain consecutive tiles", async () => {
+  it("task intent: tiles arrange vertically and arrows chain consecutive tiles", async () => {
     const editor = makeEditor({ x: 0, y: 0 });
     const events: SessionEvent[] = [
       {
@@ -268,11 +268,11 @@ describe("runSessionTurn", () => {
     const arrows = shapeCalls.filter((s) => s.type === "arrow");
     expect(tiles).toHaveLength(3);
     expect(arrows).toHaveLength(2);
-    // Tiles step horizontally; y is identical.
-    expect(tiles[1].x - tiles[0].x).toBe(360);
-    expect(tiles[2].x - tiles[1].x).toBe(360);
-    expect(tiles[0].y).toBe(tiles[1].y);
-    expect(tiles[1].y).toBe(tiles[2].y);
+    // Tiles step vertically; x is identical.
+    expect(tiles[1].y - tiles[0].y).toBe(260);
+    expect(tiles[2].y - tiles[1].y).toBe(260);
+    expect(tiles[0].x).toBe(tiles[1].x);
+    expect(tiles[1].x).toBe(tiles[2].x);
     // Each arrow gets a pair of bindings (start + end).
     expect(editor.createBindings).toHaveBeenCalledTimes(2);
     for (const call of editor.createBindings.mock.calls) {

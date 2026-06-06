@@ -12,8 +12,9 @@
  * - `runSessionTurn` is the canvas-facing high-level helper. It calls
  *   `streamSession`, then for every `node` event creates a webpage shape
  *   using a layout chosen by `flow_meta.intent`:
- *     - "task"    → horizontal line (left-to-right), tiles chained by
- *                   arrows from step N → step N+1.
+ *     - "task"    → vertical column (top-to-bottom), tiles chained by
+ *                   arrows from step N → step N+1. Reads as an ordered
+ *                   checklist and doesn't run off the side of the viewport.
  *     - "explore" → radial cluster (anchor + spokes), tiles arranged in
  *                   a ring around an anchor. Arrows fan out from the
  *                   anchor tile to each related tile (only when an
@@ -42,8 +43,8 @@ const TILE_H = 220;
  * summary + Open button fit comfortably without truncating. */
 const LINK_TILE_W = 360;
 const LINK_TILE_H = 200;
-/** Horizontal step between consecutive task-flow tiles (TILE_W + 40px gap). */
-const LINE_STEP = 360;
+/** Vertical step between consecutive task-flow tiles (TILE_H + 40px gap). */
+const COLUMN_STEP = 260;
 /** Radius of the ring around the anchor for explore-flow tiles. */
 const RADIAL_RADIUS = 360;
 /** Default angle between explore-flow tiles when totalHint is unknown. */
@@ -137,17 +138,18 @@ type LayoutState = {
 const layoutStates = new Map<string, LayoutState>();
 
 /**
- * Place a tile in a horizontal row to the right of the anchor. `index` is
- * the 0-based ordinal of the tile within the run (cursor); index 0 sits
- * on the anchor, and each subsequent index steps `LINE_STEP` to the right
- * with constant Y.
+ * Place a tile in a vertical column below the anchor. `index` is the 0-based
+ * ordinal of the tile within the run (cursor); index 0 sits on the anchor,
+ * and each subsequent index steps `COLUMN_STEP` downward with constant X —
+ * an ordered top-to-bottom checklist that doesn't run off the viewport's
+ * side the way a horizontal row did.
  */
-export function placeTileInLine(
+export function placeTileInColumn(
   state: LayoutState,
   index: number,
 ): { x: number; y: number } {
-  const x = state.anchorX - TILE_W / 2 + index * LINE_STEP;
-  const y = state.anchorY - TILE_H / 2;
+  const x = state.anchorX - TILE_W / 2;
+  const y = state.anchorY - TILE_H / 2 + index * COLUMN_STEP;
   return { x, y };
 }
 
@@ -347,7 +349,7 @@ export async function runSessionTurn(
             const index = s.cursor;
             const { x, y } =
               s.intent === "task"
-                ? placeTileInLine(s, index)
+                ? placeTileInColumn(s, index)
                 : placeTileInRadial(s, index);
             s.cursor = index + 1;
             const shapeId = createShapeId(event.nodeId);
