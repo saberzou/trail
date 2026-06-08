@@ -108,7 +108,9 @@ function defaultModelId(providerId: SessionRequest["providerId"]): string {
     case "anthropic":
       return "claude-3-5-sonnet-latest";
     case "google":
-      return "gemini-2.0-flash";
+      // "latest" alias tracks the current Flash model so we don't break when
+      // Google retires a dated version (e.g. gemini-2.0-flash).
+      return "gemini-flash-latest";
     case "deepseek":
       return "deepseek-chat";
   }
