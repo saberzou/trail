@@ -10,6 +10,7 @@
 //
 //   TRAIL_LIVE_API_KEY=sk-...            # required
 //   TRAIL_LIVE_PROVIDER=deepseek         # openai | anthropic | google | deepseek (default openai)
+//   TRAIL_LIVE_MODEL=claude-sonnet-4-6   # optional: override the provider's default model
 //   TRAIL_LIVE_SEARCH=brave              # optional: brave | tavily
 //   TRAIL_LIVE_SEARCH_KEY=...            # required iff TRAIL_LIVE_SEARCH is set
 //   pnpm test:live
@@ -21,6 +22,7 @@ import { runSession, type SessionEvent, type SessionRequest } from "./session";
 const API_KEY = process.env.TRAIL_LIVE_API_KEY;
 const PROVIDER = (process.env.TRAIL_LIVE_PROVIDER ??
   "openai") as SessionRequest["providerId"];
+const MODEL = process.env.TRAIL_LIVE_MODEL;
 const SEARCH = process.env.TRAIL_LIVE_SEARCH as "brave" | "tavily" | undefined;
 const SEARCH_KEY = process.env.TRAIL_LIVE_SEARCH_KEY;
 
@@ -34,6 +36,7 @@ function makeReq(text: string): SessionRequest {
     providerId: PROVIDER,
     // biome-ignore lint/style/noNonNullAssertion: guarded by describe.skip above.
     apiKey: API_KEY!,
+    ...(MODEL ? { model: MODEL } : {}),
     ...(SEARCH && SEARCH_KEY
       ? { searchProvider: SEARCH, searchKey: SEARCH_KEY }
       : {}),

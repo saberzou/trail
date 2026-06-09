@@ -109,7 +109,9 @@ function defaultModelId(providerId: SessionRequest["providerId"]): string {
     case "openai":
       return "gpt-4o-mini";
     case "anthropic":
-      return "claude-3-5-sonnet-latest";
+      // Dateless alias tracks the latest 4.6 snapshot; claude-3-5-sonnet
+      // was retired (same failure class as the gemini-2.0-flash incident).
+      return "claude-sonnet-4-6";
     case "google":
       // "latest" alias tracks the current Flash model so we don't break when
       // Google retires a dated version (e.g. gemini-2.0-flash).
