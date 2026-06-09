@@ -105,7 +105,9 @@ function safeHostname(url: string): string {
   }
 }
 
-async function probeUrl(url: string): Promise<{ iframeable: boolean }> {
+async function probeUrl(
+  url: string,
+): Promise<{ iframeable: boolean; previewImage?: string }> {
   try {
     const r = await fetch(`${RENDERER_BASE_URL}/probe`, {
       method: "POST",
@@ -113,7 +115,10 @@ async function probeUrl(url: string): Promise<{ iframeable: boolean }> {
       body: JSON.stringify({ url }),
     });
     if (!r.ok) return { iframeable: false };
-    return (await r.json()) as { iframeable: boolean };
+    return (await r.json()) as {
+      iframeable: boolean;
+      previewImage?: string;
+    };
   } catch {
     return { iframeable: false };
   }
@@ -664,8 +669,8 @@ async function handleUrl(
   // Sign-in pages preview as a blank/login form, so skip the renderer probe
   // and drop straight to a link card the user can open in their own session.
   const authWalled = looksAuthWalled(url);
-  const { iframeable } = authWalled
-    ? { iframeable: false }
+  const { iframeable, previewImage } = authWalled
+    ? { iframeable: false, previewImage: undefined }
     : await probeUrl(url);
   const mode = authWalled ? "link" : iframeable ? "iframe" : "screenshot";
   const hostname = safeHostname(url);
@@ -691,6 +696,7 @@ async function handleUrl(
         title: hostname,
         hostname,
         mode,
+        previewImage,
       },
     });
   } catch (err) {

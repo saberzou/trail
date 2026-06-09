@@ -368,6 +368,7 @@ export async function runSessionTurn(
                   hostname: event.hostname,
                   mode: event.mode,
                   summary: event.summary,
+                  previewImage: event.previewImage,
                 },
               });
               createdTiles.push({

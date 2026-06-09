@@ -112,7 +112,7 @@ function RenderBody({
   onError: () => void;
   onSwitchMode: (mode: WebpageNodeMode) => void;
 }) {
-  const { mode, url, title, hostname, summary } = shape.props;
+  const { mode, url, title, hostname, summary, previewImage } = shape.props;
 
   if (mode === "iframe") {
     return (
@@ -124,11 +124,45 @@ function RenderBody({
     );
   }
   if (mode === "screenshot") {
-    return <ScreenshotImg url={url} onError={onError} />;
+    return (
+      <PreviewBody previewImage={previewImage} url={url} onError={onError} />
+    );
   }
   return (
     <LinkCard hostname={hostname} title={title} summary={summary} url={url} />
   );
+}
+
+/**
+ * Preview pane for non-iframe tiles. Prefers the page's own share image
+ * (og:image — what chat apps unfurl): instant, no Playwright round-trip,
+ * and it works even when the renderer sidecar is offline. If that image
+ * 404s/blocks, we fall back to the renderer screenshot; ScreenshotImg's
+ * own onError then degrades to a link card as before.
+ */
+function PreviewBody({
+  previewImage,
+  url,
+  onError,
+}: {
+  previewImage?: string;
+  url: string;
+  onError: () => void;
+}) {
+  const [ogFailed, setOgFailed] = useState(false);
+  if (previewImage && !ogFailed) {
+    return (
+      // biome-ignore lint/performance/noImgElement: tldraw shape previews render inside the canvas, not the Next.js page tree.
+      <img
+        alt=""
+        className="h-full w-full object-cover object-top"
+        draggable={false}
+        onError={() => setOgFailed(true)}
+        src={previewImage}
+      />
+    );
+  }
+  return <ScreenshotImg url={url} onError={onError} />;
 }
 
 function IframeBody({

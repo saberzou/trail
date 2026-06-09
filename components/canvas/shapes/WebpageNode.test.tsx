@@ -160,6 +160,55 @@ describe("WebpageNode", () => {
     });
   });
 
+  it("screenshot mode with previewImage renders the og image directly (no renderer fetch)", () => {
+    const fetchSpy = vi.fn();
+    vi.stubGlobal("fetch", fetchSpy);
+    const { container } = render(
+      React.createElement(WebpageNode, {
+        shape: makeShape({
+          mode: "screenshot",
+          previewImage: "https://cdn.example.com/hero.png",
+        }),
+      }),
+    );
+    const img = container.querySelector("img.object-cover");
+    expect(img?.getAttribute("src")).toBe("https://cdn.example.com/hero.png");
+    // No renderer /screenshot round-trip needed.
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it("falls back to the renderer screenshot when the og image fails to load", async () => {
+    const fakeBlob = new Blob([new Uint8Array([0x89, 0x50])], {
+      type: "image/png",
+    });
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        async () =>
+          new Response(fakeBlob, {
+            status: 200,
+            headers: { "content-type": "image/png" },
+          }),
+      ),
+    );
+    const { container } = render(
+      React.createElement(WebpageNode, {
+        shape: makeShape({
+          mode: "screenshot",
+          previewImage: "https://cdn.example.com/broken.png",
+        }),
+      }),
+    );
+    const og = container.querySelector("img.object-cover");
+    expect(og).not.toBeNull();
+    // Simulate the og image 404ing/being blocked.
+    fireEvent.error(og!);
+    await waitFor(() => {
+      const img = container.querySelector("img.object-cover");
+      expect(img?.getAttribute("src")).toMatch(/^blob:/);
+    });
+  });
+
   it("link mode renders hostname + summary, no Open button in body", () => {
     const { container } = render(
       React.createElement(WebpageNode, {

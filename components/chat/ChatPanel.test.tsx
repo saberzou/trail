@@ -176,6 +176,28 @@ describe("ChatPanel", () => {
     expect(probed).toBe(false);
   });
 
+  it("probe previewImage rides into the created shape (chat-app unfurl)", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        jsonResponse({
+          iframeable: false,
+          previewImage: "https://cdn.example.com/og.png",
+        }),
+      ),
+    );
+    render(React.createElement(ChatPanel, TEST_PROPS));
+    const textarea = await screen.findByLabelText("Message input");
+    fireEvent.change(textarea, { target: { value: "https://example.com" } });
+    fireEvent.submit(textarea.closest("form")!);
+    await waitFor(() => {
+      expect(editor.createShape).toHaveBeenCalledTimes(1);
+    });
+    expect(editor.createShape.mock.calls[0][0].props.previewImage).toBe(
+      "https://cdn.example.com/og.png",
+    );
+  });
+
   it("iframeable URL creates the shape in iframe mode", async () => {
     vi.stubGlobal(
       "fetch",

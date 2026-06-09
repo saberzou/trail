@@ -67,6 +67,9 @@ export type SessionEvent =
       hostname: string;
       mode: "screenshot" | "iframe" | "link";
       summary?: string;
+      /** Share-preview image (og:image) sniffed when the page was fetched —
+       * rendered as the tile preview, chat-app style. */
+      previewImage?: string;
     }
   | {
       kind: "flow_meta";
@@ -150,12 +153,15 @@ function safeHostname(url: string): string {
  * capture behind the auth wall, and the link tile lets the user click
  * through in their own browser context.
  */
-export function nodeFromStep(step: {
-  title: string;
-  url: string;
-  instruction: string;
-  requiresLogin: boolean;
-}): Extract<SessionEvent, { kind: "node" }> {
+export function nodeFromStep(
+  step: {
+    title: string;
+    url: string;
+    instruction: string;
+    requiresLogin: boolean;
+  },
+  previewImage?: string,
+): Extract<SessionEvent, { kind: "node" }> {
   // Ship as a link tile when the model flags a login wall OR the URL itself
   // looks like a sign-in surface (catches walls the model missed — there's
   // nothing useful to screenshot/iframe behind them).
@@ -168,6 +174,7 @@ export function nodeFromStep(step: {
     hostname: safeHostname(step.url),
     mode: isLink ? "link" : "screenshot",
     summary: step.instruction,
+    ...(previewImage ? { previewImage } : {}),
   };
 }
 
@@ -272,6 +279,9 @@ export async function* runSession(
   // URL exactly as the model called fetch_url with so that build_flow's
   // sourceUrl can be looked up directly.
   const fetchedPages = new Map<string, string>();
+  // Share-preview images (og:image) per fetched URL, same keying as
+  // fetchedPages — attached to node events so tiles unfurl chat-app style.
+  const fetchedPreviews = new Map<string, string>();
 
   // Outer event queue. The streamText loop and the build_flow tool both
   // produce events; we pump them out in the order they arrive. The
@@ -310,8 +320,12 @@ export async function* runSession(
       const result = (await baseFetch.execute!(input, ctx)) as {
         title: string;
         text: string;
+        previewImage?: string;
       };
       fetchedPages.set(input.url, result.text);
+      if (result.previewImage) {
+        fetchedPreviews.set(input.url, result.previewImage);
+      }
       return result;
     },
   });
@@ -366,7 +380,12 @@ export async function* runSession(
         downgraded: forceDowngrade,
       });
       for (const step of effectivePlan.steps) {
-        enqueue(nodeFromStep(step));
+        // Look up the preview under the step's own URL first, then its
+        // sourceUrl (often the same page the agent fetched for grounding).
+        const previewImage =
+          fetchedPreviews.get(step.url) ??
+          (step.sourceUrl ? fetchedPreviews.get(step.sourceUrl) : undefined);
+        enqueue(nodeFromStep(step, previewImage));
       }
       return {
         ok: true,

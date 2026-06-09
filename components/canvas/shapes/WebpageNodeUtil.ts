@@ -39,6 +39,9 @@ export type WebpageNodeShape = TLBaseShape<
     mode: WebpageNodeMode;
     summary?: string;
     stepState?: WebpageNodeStepState;
+    /** Share-preview image (og:image) for chat-app-style unfurls. Used as
+     * the preview in screenshot mode before falling back to the renderer. */
+    previewImage?: string;
   }
 >;
 
@@ -57,6 +60,7 @@ export class WebpageNodeUtil extends ShapeUtil<WebpageNodeShape> {
     mode: T.literalEnum("iframe", "screenshot", "link"),
     summary: T.optional(T.string),
     stepState: T.optional(T.literalEnum("todo", "done")),
+    previewImage: T.optional(T.string),
   };
 
   override canResize = () => true;
