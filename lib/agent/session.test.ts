@@ -498,4 +498,25 @@ describe("nodeFromStep", () => {
     });
     expect(ev.mode).toBe("link");
   });
+
+  it("attaches the fetched page's previewImage when supplied", () => {
+    const ev = nodeFromStep(
+      {
+        title: "Overview",
+        url: "https://www.example.gov/apply",
+        instruction: "Read this.",
+        requiresLogin: false,
+      },
+      "https://cdn.example.gov/og.png",
+    );
+    expect(ev.previewImage).toBe("https://cdn.example.gov/og.png");
+    // And absent when not supplied.
+    const bare = nodeFromStep({
+      title: "Overview",
+      url: "https://www.example.gov/apply",
+      instruction: "Read this.",
+      requiresLogin: false,
+    });
+    expect(bare.previewImage).toBeUndefined();
+  });
 });

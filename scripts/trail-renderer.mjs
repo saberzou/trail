@@ -13,6 +13,7 @@ import path from "node:path";
 import { chromium } from "playwright";
 import {
   cacheKey,
+  extractPreviewImage,
   framingAllowed,
   validateUrl,
 } from "../lib/renderer-parse.mjs";
@@ -25,6 +26,8 @@ const CACHE_TTL_MS = 24 * 60 * 60 * 1000;
 const SHOT_TIMEOUT_MS = 15_000;
 const SCREENSHOT_TIMEOUT_MS = 5_000;
 const PROBE_TIMEOUT_MS = 10_000;
+/** How much of a probed page to scan for og:image/twitter:image meta. */
+const PREVIEW_SCAN_BYTES = 256 * 1024;
 const SHUTDOWN_TIMEOUT_MS = 5_000;
 const MAX_BODY_BYTES = 16 * 1024;
 const ALLOWED_ORIGINS = new Set([
@@ -184,13 +187,57 @@ async function handleProbe(req, res) {
       signal: AbortSignal.timeout(PROBE_TIMEOUT_MS),
     });
     const iframeable = framingAllowed(r.headers, appOrigins);
-    sendJson(res, 200, { iframeable });
+    // Sniff the page's share-preview image (og:image / twitter:image) from
+    // the same response — chat-app-style unfurl, no extra request. og meta
+    // lives in <head>, so a capped head-slice is enough; a read failure
+    // just means no preview, never a probe failure.
+    let previewImage = null;
+    try {
+      const head = await readHeadSlice(r, PREVIEW_SCAN_BYTES);
+      previewImage = extractPreviewImage(head, r.url || url);
+    } catch {
+      previewImage = null;
+    }
+    sendJson(res, 200, {
+      iframeable,
+      ...(previewImage ? { previewImage } : {}),
+    });
   } catch (err) {
     sendJson(res, 200, {
       iframeable: false,
       error: String(err?.message ?? err),
     });
   }
+}
+
+/**
+ * Read at most `cap` bytes from a fetch Response body, then cancel the
+ * stream. og/twitter meta tags live in <head>, so we never need the
+ * whole document — this keeps the probe cheap on multi-MB pages.
+ */
+async function readHeadSlice(res, cap) {
+  if (!res.body) return await res.text();
+  const reader = res.body.getReader();
+  const chunks = [];
+  let total = 0;
+  while (total < cap) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    if (value) {
+      total += value.byteLength;
+      chunks.push(value);
+    }
+  }
+  await reader.cancel().catch(() => {});
+  const merged = new Uint8Array(Math.min(total, cap));
+  let offset = 0;
+  for (const c of chunks) {
+    const take = Math.min(c.byteLength, cap - offset);
+    merged.set(c.subarray(0, take), offset);
+    offset += take;
+    if (offset >= cap) break;
+  }
+  return new TextDecoder("utf-8", { fatal: false }).decode(merged);
 }
 
 function handleHealth(req, res) {

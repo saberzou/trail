@@ -325,6 +325,34 @@ async function readCappedBody(
   return new TextDecoder("utf-8").decode(merged);
 }
 
+/**
+ * Pull the page's share-preview image (og:image / og:image:secure_url /
+ * twitter:image) from a parsed document, resolved against the final URL.
+ * Returns null when absent or non-http(s).
+ */
+function extractMetaImage(doc: Document, baseUrl: URL): string | null {
+  const selectors = [
+    'meta[property="og:image:secure_url"]',
+    'meta[property="og:image"]',
+    'meta[name="og:image"]',
+    'meta[name="twitter:image"]',
+    'meta[name="twitter:image:src"]',
+  ];
+  for (const sel of selectors) {
+    const content = doc.querySelector(sel)?.getAttribute("content")?.trim();
+    if (!content) continue;
+    try {
+      const resolved = new URL(content, baseUrl);
+      if (resolved.protocol === "http:" || resolved.protocol === "https:") {
+        return resolved.toString();
+      }
+    } catch {
+      // unparseable — try the next candidate
+    }
+  }
+  return null;
+}
+
 type MakeFetchUrlToolOpts = {
   fetch?: Fetch;
   lookup?: LookupAllFn;
@@ -469,11 +497,17 @@ export function makeFetchUrlTool(opts: MakeFetchUrlToolOpts = {}) {
 
       const html = await readCappedBody(finalResponse, cap, signal);
       const dom = new JSDOM(html, { url: finalUrl.toString() });
+      // Sniff the share-preview image (og:image / twitter:image) BEFORE
+      // Readability runs — Readability mutates the document and strips head
+      // metadata. This is what chat apps render when a link is shared.
+      const previewImage =
+        extractMetaImage(dom.window.document, finalUrl) ?? undefined;
       const article = new Readability(dom.window.document).parse();
       if (article?.textContent) {
         return {
           title: article.title || finalUrl.toString(),
           text: article.textContent.slice(0, 4000),
+          previewImage,
         };
       }
       const $ = cheerio.load(html);
@@ -481,6 +515,7 @@ export function makeFetchUrlTool(opts: MakeFetchUrlToolOpts = {}) {
       return {
         title: $("title").text() || finalUrl.toString(),
         text: $("body").text().replace(/\s+/g, " ").slice(0, 4000),
+        previewImage,
       };
     } finally {
       // Body has been fully drained (or we're erroring out); safe to close.
