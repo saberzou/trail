@@ -301,6 +301,77 @@ export function ChatPanel({
     abortRef.current?.abort();
   }, []);
 
+  // "Find related sites" from a canvas tile (the ✦ button on WebpageNode).
+  // The tile dispatches a window event; we run an explore turn anchored on it
+  // so the new cluster fans out around that tile.
+  const sendingRef = useRef(sending);
+  sendingRef.current = sending;
+  useEffect(() => {
+    async function expandFromTile(detail: {
+      url: string;
+      hostname: string;
+      shapeId: TLShapeId;
+    }) {
+      if (sendingRef.current) return;
+      const editor = getCanvasEditor();
+      if (!editor) return;
+      if (!useSettingsStore.getState().hydrated) await hydrateSettings();
+      const { settings } = useSettingsStore.getState();
+      const haveProvider = Boolean(
+        selectAgentProviders(
+          settings.providers,
+          settings.defaultLlm,
+          settings.defaultSearch,
+        ),
+      );
+      const pushMsg = (m: ChatMessage) => setMessages((prev) => [...prev, m]);
+      if (!haveProvider) {
+        pushMsg({
+          id: nanoid(),
+          role: "assistant",
+          text: "Configure an LLM provider in /settings first.",
+          createdAt: Date.now(),
+        });
+        return;
+      }
+      let pos: { x: number; y: number } | undefined;
+      try {
+        pos = editor.getShapePageBounds(detail.shapeId)?.center;
+      } catch {
+        pos = undefined;
+      }
+      setSending(true);
+      try {
+        pushMsg({
+          id: nanoid(),
+          role: "assistant",
+          text: `Looking for sites related to ${detail.hostname}…`,
+          createdAt: Date.now(),
+        });
+        const seed = `Find 4-6 sites related to ${detail.url} (${detail.hostname}). Return them as an exploration cluster (intent: explore).`;
+        const history: ChatMessage[] = [
+          ...messagesRef.current,
+          { id: nanoid(), role: "user", text: seed, createdAt: Date.now() },
+        ];
+        await handleAgent(
+          history,
+          pushMsg,
+          (updater) => setMessages((prev) => prev.map(updater)),
+          abortRef,
+          { pos, shapeId: detail.shapeId },
+        );
+      } finally {
+        setSending(false);
+        abortRef.current = null;
+      }
+    }
+    const onExpand = (e: Event) => {
+      void expandFromTile((e as CustomEvent).detail);
+    };
+    window.addEventListener("trail:expand", onExpand);
+    return () => window.removeEventListener("trail:expand", onExpand);
+  }, []);
+
   const onKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
       e.preventDefault();
@@ -635,6 +706,18 @@ async function handleAgent(
       id: nanoid(),
       role: "assistant",
       text: "I couldn't verify step-by-step sources for this, so I've laid out related pages to explore instead.",
+      createdAt: Date.now(),
+    });
+  }
+
+  // The agent is supposed to always author tiles via build_flow. When a turn
+  // finishes with none — the model "answered" in chat without acting — say so,
+  // so the user isn't left staring at an unchanged canvas after a "done".
+  if (!lastError && tileCount === 0) {
+    push({
+      id: nanoid(),
+      role: "assistant",
+      text: 'Nothing landed on the canvas for that one. Try a more specific request — a task like "apply for a US passport, step by step", a topic to explore, or paste a URL.',
       createdAt: Date.now(),
     });
   }
