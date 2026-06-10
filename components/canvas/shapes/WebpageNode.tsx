@@ -1,4 +1,4 @@
-import { Check, ExternalLink } from "lucide-react";
+import { Check, ExternalLink, Sparkles } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import type {
   WebpageNodeMode,
@@ -14,10 +14,39 @@ const RENDERER_BASE_URL =
  * image. We use it to visually differentiate tiles even when the screenshot
  * sidecar is offline. The CSP `img-src https:` rule already covers it.
  */
-function faviconUrl(hostname: string): string {
+function faviconUrl(hostname: string, size = 64): string {
   return `https://www.google.com/s2/favicons?domain=${encodeURIComponent(
     hostname,
-  )}&sz=64`;
+  )}&sz=${size}`;
+}
+
+/**
+ * Lightweight fallback preview — the site's favicon centred on a neutral
+ * ground, with the hostname beneath. Instant (one tiny image, no renderer,
+ * no og fetch), so tiles never sit blank or show a heavy "loading…" state.
+ * Used while a richer preview resolves and as the final fallback when there
+ * isn't one.
+ */
+function FaviconHero({ hostname }: { hostname: string }) {
+  return (
+    <div className="flex h-full w-full flex-col items-center justify-center gap-2 bg-muted">
+      {hostname ? (
+        // biome-ignore lint/performance/noImgElement: tldraw shape previews render inside the canvas, not the Next.js page tree.
+        <img
+          alt=""
+          aria-hidden="true"
+          className="size-10 rounded-md opacity-90"
+          draggable={false}
+          src={faviconUrl(hostname, 128)}
+        />
+      ) : null}
+      {hostname ? (
+        <span className="max-w-[80%] truncate px-2 text-[11px] text-muted-foreground">
+          {hostname}
+        </span>
+      ) : null}
+    </div>
+  );
 }
 
 type WebpageNodeProps = { shape: WebpageNodeShape };
@@ -50,6 +79,17 @@ export function WebpageNode({ shape }: WebpageNodeProps) {
     });
   };
 
+  // Ask the chat dock to fan out related sites around THIS tile. Decoupled
+  // via a window event so the canvas shape doesn't need a handle on the
+  // ChatPanel — ChatPanel listens and runs the explore turn anchored here.
+  const expandRelated = () => {
+    window.dispatchEvent(
+      new CustomEvent("trail:expand", {
+        detail: { url, hostname, shapeId: shape.id },
+      }),
+    );
+  };
+
   return (
     <article
       className={`flex h-full w-full flex-col overflow-hidden rounded-xl border border-border bg-card shadow-md transition-opacity ${
@@ -78,9 +118,16 @@ export function WebpageNode({ shape }: WebpageNodeProps) {
         >
           {title || hostname || "Untitled"}
         </span>
-        <span className="shrink-0 rounded bg-secondary px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
-          {mode}
-        </span>
+        <button
+          aria-label="Find related sites"
+          className="flex size-6 shrink-0 items-center justify-center rounded text-muted-foreground hover:bg-accent hover:text-foreground"
+          onClick={expandRelated}
+          onPointerDown={(e) => e.stopPropagation()}
+          title="Find related sites"
+          type="button"
+        >
+          <Sparkles className="size-3.5" />
+        </button>
         <a
           aria-label="Open URL in new tab"
           className="flex size-6 shrink-0 items-center justify-center rounded text-muted-foreground hover:bg-accent hover:text-foreground"
@@ -93,11 +140,7 @@ export function WebpageNode({ shape }: WebpageNodeProps) {
         </a>
       </header>
       <div className="relative min-h-0 flex-1 overflow-hidden bg-muted">
-        <RenderBody
-          shape={shape}
-          onError={() => switchMode("link")}
-          onSwitchMode={switchMode}
-        />
+        <RenderBody shape={shape} onSwitchMode={switchMode} />
       </div>
     </article>
   );
@@ -105,11 +148,9 @@ export function WebpageNode({ shape }: WebpageNodeProps) {
 
 function RenderBody({
   shape,
-  onError,
   onSwitchMode,
 }: {
   shape: WebpageNodeShape;
-  onError: () => void;
   onSwitchMode: (mode: WebpageNodeMode) => void;
 }) {
   const { mode, url, title, hostname, summary, previewImage } = shape.props;
@@ -125,7 +166,7 @@ function RenderBody({
   }
   if (mode === "screenshot") {
     return (
-      <PreviewBody previewImage={previewImage} url={url} onError={onError} />
+      <PreviewBody hostname={hostname} previewImage={previewImage} url={url} />
     );
   }
   return (
@@ -134,23 +175,56 @@ function RenderBody({
 }
 
 /**
- * Preview pane for non-iframe tiles. Prefers the page's own share image
- * (og:image — what chat apps unfurl): instant, no Playwright round-trip,
- * and it works even when the renderer sidecar is offline. If that image
- * 404s/blocks, we fall back to the renderer screenshot; ScreenshotImg's
- * own onError then degrades to a link card as before.
+ * Preview pane for non-iframe tiles. Preview ladder, cheapest first:
+ *   1. the og:image we were handed (from the agent fetch / probe), if any;
+ *   2. otherwise ask the same-origin /api/og route to fetch the page's
+ *      og:image server-side — chat-app-style unfurl with NO renderer needed;
+ *   3. otherwise the Playwright renderer screenshot;
+ *   4. ScreenshotImg's own onError then degrades to a link card.
+ *
+ * og images work even when the screenshot sidecar is offline, which is the
+ * common single-user case.
  */
 function PreviewBody({
   previewImage,
   url,
-  onError,
+  hostname,
 }: {
   previewImage?: string;
   url: string;
-  onError: () => void;
+  hostname: string;
 }) {
+  const [ogUrl, setOgUrl] = useState<string | null>(previewImage ?? null);
   const [ogFailed, setOgFailed] = useState(false);
-  if (previewImage && !ogFailed) {
+  // Whether we've finished trying to RESOLVE an og url (not whether it
+  // rendered). Starts done if we were handed one.
+  const [resolved, setResolved] = useState<boolean>(Boolean(previewImage));
+
+  useEffect(() => {
+    if (previewImage) return; // already have one — no lookup needed
+    let alive = true;
+    (async () => {
+      try {
+        const r = await fetch("/api/og", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ url }),
+        });
+        const data = (await r.json()) as { previewImage?: string | null };
+        if (!alive) return;
+        if (data.previewImage) setOgUrl(data.previewImage);
+      } catch {
+        // ignore — fall through to the renderer screenshot
+      } finally {
+        if (alive) setResolved(true);
+      }
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [url, previewImage]);
+
+  if (ogUrl && !ogFailed) {
     return (
       // biome-ignore lint/performance/noImgElement: tldraw shape previews render inside the canvas, not the Next.js page tree.
       <img
@@ -158,11 +232,17 @@ function PreviewBody({
         className="h-full w-full object-cover object-top"
         draggable={false}
         onError={() => setOgFailed(true)}
-        src={previewImage}
+        src={ogUrl}
       />
     );
   }
-  return <ScreenshotImg url={url} onError={onError} />;
+  // While resolving the og lookup, show the lightweight favicon hero (never
+  // a blank pane). Once resolved with no og, hand off to the renderer
+  // screenshot — which itself falls back to the favicon hero if offline.
+  if (!resolved) {
+    return <FaviconHero hostname={hostname} />;
+  }
+  return <ScreenshotImg hostname={hostname} url={url} />;
 }
 
 function IframeBody({
@@ -214,14 +294,12 @@ function IframeBody({
   );
 }
 
-function ScreenshotImg({ url, onError }: { url: string; onError: () => void }) {
+function ScreenshotImg({ url, hostname }: { url: string; hostname: string }) {
   const [blobUrl, setBlobUrl] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     let alive = true;
     let createdBlobUrl: string | null = null;
-    setLoading(true);
     setBlobUrl(null);
 
     (async () => {
@@ -239,10 +317,10 @@ function ScreenshotImg({ url, onError }: { url: string; onError: () => void }) {
         if (!alive) return;
         createdBlobUrl = URL.createObjectURL(blob);
         setBlobUrl(createdBlobUrl);
-        setLoading(false);
-      } catch (err) {
-        console.error("[trail] screenshot fetch failed", err);
-        if (alive) onError();
+      } catch {
+        // Renderer offline / failed — the favicon hero below stays. No mode
+        // switch: a missing screenshot isn't an auth wall, and the favicon
+        // is a perfectly good lightweight preview.
       }
     })();
 
@@ -250,20 +328,11 @@ function ScreenshotImg({ url, onError }: { url: string; onError: () => void }) {
       alive = false;
       if (createdBlobUrl) URL.revokeObjectURL(createdBlobUrl);
     };
-  }, [url, onError]);
+  }, [url]);
 
-  if (loading && !blobUrl) {
-    return (
-      <div
-        aria-label="Loading screenshot"
-        className="flex h-full w-full items-center justify-center text-[12px] text-muted-foreground"
-        role="status"
-      >
-        <span className="animate-pulse">loading preview...</span>
-      </div>
-    );
-  }
-  if (!blobUrl) return null;
+  // Show the favicon hero until (and unless) a screenshot arrives — never a
+  // blank pane or a heavy "loading…" flash.
+  if (!blobUrl) return <FaviconHero hostname={hostname} />;
   return (
     // biome-ignore lint/performance/noImgElement: tldraw shape previews are rendered inside the canvas, not the Next.js page tree.
     <img
@@ -291,20 +360,20 @@ function LinkCard({
   // "big black blob" the user flagged.
   url?: string;
 }) {
+  // With a summary (e.g. agent link tiles), show the text card. Without one
+  // (a bare paste that fell through to link mode), show the favicon hero so
+  // the tile is still a recognizable image rather than empty text.
+  if (!summary) {
+    return <FaviconHero hostname={hostname} />;
+  }
   return (
     <div className="flex h-full w-full flex-col gap-1.5 bg-card px-4 py-3">
       <p className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
         {hostname}
       </p>
-      {summary ? (
-        <p className="line-clamp-6 text-[12px] leading-snug text-foreground/80">
-          {summary}
-        </p>
-      ) : (
-        <p className="text-[12px] text-muted-foreground/70">
-          No preview available.
-        </p>
-      )}
+      <p className="line-clamp-6 text-[12px] leading-snug text-foreground/80">
+        {summary}
+      </p>
     </div>
   );
 }

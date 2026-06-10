@@ -14,6 +14,13 @@ import { setCanvasEditor } from "@/lib/canvas/editorRef";
 import { WebpageNode } from "./WebpageNode";
 import type { WebpageNodeShape } from "./WebpageNodeUtil";
 
+function jsonResponse(body: unknown): Response {
+  return new Response(JSON.stringify(body), {
+    status: 200,
+    headers: { "content-type": "application/json" },
+  });
+}
+
 function makeShape(
   overrides: Partial<WebpageNodeShape["props"]> = {},
 ): WebpageNodeShape {
@@ -58,7 +65,7 @@ describe("WebpageNode", () => {
     vi.restoreAllMocks();
   });
 
-  it("renders header with title, hostname badge, mode badge, Open link", () => {
+  it("renders header with title, find-related + Open affordances", () => {
     render(
       React.createElement(WebpageNode, {
         shape: makeShape({ mode: "link", title: "Hello world" }),
@@ -68,12 +75,31 @@ describe("WebpageNode", () => {
     // doesn't duplicate it (PR: simplify link body).
     expect(screen.getAllByText("Hello world").length).toBe(1);
     expect(screen.getAllByText("example.com").length).toBeGreaterThan(0);
-    expect(screen.getByText("link")).toBeInTheDocument();
-    // The header carries the single Open affordance now.
+    expect(
+      screen.getByRole("button", { name: /find related sites/i }),
+    ).toBeInTheDocument();
     const openLinks = screen.getAllByRole("link", {
       name: /Open URL in new tab/i,
     });
     expect(openLinks.length).toBe(1);
+  });
+
+  it("the find-related button dispatches a trail:expand event for this tile", () => {
+    const events: CustomEvent[] = [];
+    const handler = (e: Event) => events.push(e as CustomEvent);
+    window.addEventListener("trail:expand", handler);
+    render(
+      React.createElement(WebpageNode, {
+        shape: makeShape({ mode: "link", hostname: "nytimes.com" }),
+      }),
+    );
+    fireEvent.click(
+      screen.getByRole("button", { name: /find related sites/i }),
+    );
+    window.removeEventListener("trail:expand", handler);
+    expect(events).toHaveLength(1);
+    expect(events[0].detail.hostname).toBe("nytimes.com");
+    expect(events[0].detail.url).toContain("example.com");
   });
 
   it("renders a done-toggle that flips stepState to 'done' via updateShape", () => {
@@ -132,19 +158,22 @@ describe("WebpageNode", () => {
     expect(iframe?.getAttribute("src")).toBe("https://example.com/page");
   });
 
-  it("screenshot mode fetches a blob and renders an <img src=blob:...>", async () => {
+  it("screenshot mode with no og resolves /api/og then renders the renderer blob", async () => {
     const fakeBlob = new Blob([new Uint8Array([0x89, 0x50])], {
       type: "image/png",
     });
     vi.stubGlobal(
       "fetch",
-      vi.fn(
-        async () =>
-          new Response(fakeBlob, {
-            status: 200,
-            headers: { "content-type": "image/png" },
-          }),
-      ),
+      vi.fn(async (input: RequestInfo | URL) => {
+        const u = typeof input === "string" ? input : (input as URL).toString();
+        // No server-side og image for this page.
+        if (u.endsWith("/api/og")) return jsonResponse({ previewImage: null });
+        // Renderer screenshot.
+        return new Response(fakeBlob, {
+          status: 200,
+          headers: { "content-type": "image/png" },
+        });
+      }),
     );
     const { container } = render(
       React.createElement(WebpageNode, {
@@ -158,6 +187,30 @@ describe("WebpageNode", () => {
       expect(img).not.toBeNull();
       expect(img?.getAttribute("src")).toMatch(/^blob:/);
     });
+  });
+
+  it("screenshot mode with no handed og fetches /api/og and renders it (renderer-free)", async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const u = typeof input === "string" ? input : (input as URL).toString();
+      if (u.endsWith("/api/og")) {
+        return jsonResponse({ previewImage: "https://cdn.example.com/og.png" });
+      }
+      throw new Error("renderer should not be called when og resolves");
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const { container } = render(
+      React.createElement(WebpageNode, {
+        shape: makeShape({ mode: "screenshot" }),
+      }),
+    );
+    await waitFor(() => {
+      const img = container.querySelector("img.object-cover");
+      expect(img?.getAttribute("src")).toBe("https://cdn.example.com/og.png");
+    });
+    // No renderer /screenshot round-trip — og came from the same-origin route.
+    expect(
+      fetchMock.mock.calls.some(([u]) => String(u).endsWith("/screenshot")),
+    ).toBe(false);
   });
 
   it("screenshot mode with previewImage renders the og image directly (no renderer fetch)", () => {
@@ -234,16 +287,26 @@ describe("WebpageNode", () => {
     expect(container.querySelector("header")?.contains(links[0])).toBe(true);
   });
 
-  it("link mode without a summary shows a muted 'No preview available' fallback", () => {
-    render(
+  it("link mode without a summary shows the favicon fallback (an image)", () => {
+    const { container } = render(
       React.createElement(WebpageNode, {
-        shape: makeShape({ mode: "link", title: "Anything", summary: "" }),
+        shape: makeShape({
+          mode: "link",
+          title: "Anything",
+          summary: "",
+          hostname: "stripe.com",
+        }),
       }),
     );
-    expect(screen.getByText(/No preview available/i)).toBeInTheDocument();
+    // No "No preview available" text — a favicon image stands in instead.
+    expect(screen.queryByText(/No preview available/i)).toBeNull();
+    const heroFavicon = Array.from(container.querySelectorAll("img")).find(
+      (i) => i.getAttribute("src")?.includes("sz=128"),
+    );
+    expect(heroFavicon?.getAttribute("src")).toContain("stripe.com");
   });
 
-  it("switchMode (via screenshot fetch failure) calls editor.updateShape", async () => {
+  it("a failed screenshot shows the favicon fallback, not a mode switch", async () => {
     const updateShape = vi.fn();
     setCanvasEditor({
       updateShape,
@@ -251,19 +314,25 @@ describe("WebpageNode", () => {
 
     vi.stubGlobal(
       "fetch",
-      vi.fn(async () => new Response("nope", { status: 500 })),
+      vi.fn(async (input: RequestInfo | URL) => {
+        const u = typeof input === "string" ? input : (input as URL).toString();
+        if (u.endsWith("/api/og")) return jsonResponse({ previewImage: null });
+        return new Response("nope", { status: 500 }); // renderer fails
+      }),
     );
-    render(
+    const { container } = render(
       React.createElement(WebpageNode, {
-        shape: makeShape({ mode: "screenshot" }),
+        shape: makeShape({ mode: "screenshot", hostname: "example.com" }),
       }),
     );
     await waitFor(() => {
-      expect(updateShape).toHaveBeenCalled();
+      const hero = Array.from(container.querySelectorAll("img")).find((i) =>
+        i.getAttribute("src")?.includes("sz=128"),
+      );
+      expect(hero).toBeDefined();
     });
-    const arg = updateShape.mock.calls[0][0];
-    expect(arg.type).toBe("webpage");
-    expect(arg.props.mode).toBe("link");
+    // A missing screenshot is NOT treated as an auth wall — no mode switch.
+    expect(updateShape).not.toHaveBeenCalled();
   });
 
   it("iframe load-timeout falls back to screenshot mode", async () => {
@@ -344,9 +413,12 @@ describe("WebpageNode", () => {
   });
 
   it("screenshot fetch body includes the viewport dimensions", async () => {
-    const fetchSpy = vi.fn(
-      async () => new Response(new Blob(), { status: 500 }),
-    );
+    const fetchSpy = vi.fn(async (input: RequestInfo | URL) => {
+      const u = typeof input === "string" ? input : (input as URL).toString();
+      // No server-side og → fall through to the renderer screenshot.
+      if (u.endsWith("/api/og")) return jsonResponse({ previewImage: null });
+      return new Response(new Blob(), { status: 500 });
+    });
     vi.stubGlobal("fetch", fetchSpy);
     setCanvasEditor({
       updateShape: vi.fn(),
@@ -356,13 +428,17 @@ describe("WebpageNode", () => {
         shape: makeShape({ mode: "screenshot" }),
       }),
     );
+    // Find the renderer /screenshot call (the /api/og lookup runs first).
+    let shotCall: [string, RequestInit] | undefined;
     await waitFor(() => {
-      expect(fetchSpy).toHaveBeenCalled();
+      shotCall = fetchSpy.mock.calls.find(([u]) =>
+        String(u).endsWith("/screenshot"),
+      ) as unknown as [string, RequestInit] | undefined;
+      expect(shotCall).toBeDefined();
     });
-    const call = fetchSpy.mock.calls[0] as unknown as [string, RequestInit];
-    const init = call[1];
-    expect(init).toBeDefined();
-    const body = JSON.parse(init.body as string);
+    const body = JSON.parse(
+      (shotCall as [string, RequestInit])[1].body as string,
+    );
     expect(body.viewport).toEqual({ width: 1280, height: 720 });
   });
 
