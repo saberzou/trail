@@ -31,6 +31,7 @@ import { createDeepSeek } from "@ai-sdk/deepseek";
 import { createGoogleGenerativeAI } from "@ai-sdk/google";
 import { createOpenAI } from "@ai-sdk/openai";
 import {
+  generateText,
   type LanguageModel,
   type ModelMessage,
   stepCountIs,
@@ -309,6 +310,10 @@ export async function* runSession(
   // Retry accounting for the build_flow validator → forced-downgrade flow.
   let retryCount = 0;
   let downgraded = false;
+  // Whether build_flow ever successfully authored tiles this turn. If the
+  // model finishes without it, we force one more call (see below) so a turn
+  // never silently produces an empty canvas.
+  let buildFlowEmitted = false;
 
   // --- Tools ---------------------------------------------------------------
 
@@ -391,6 +396,7 @@ export async function* runSession(
           (step.sourceUrl ? fetchedPreviews.get(step.sourceUrl) : undefined);
         enqueue(nodeFromStep(step, previewImage));
       }
+      buildFlowEmitted = true;
       return {
         ok: true,
         nodeCount: effectivePlan.steps.length,
@@ -484,5 +490,44 @@ export async function* runSession(
     yield { kind: "error", ...classifyError(streamError) };
     return;
   }
+
+  // Guard against the "model replied in prose and never called build_flow"
+  // failure (the user sees a chatty answer but an empty canvas). Force one
+  // build_flow call. We pin retryCount past the limit so the tool takes its
+  // can't-fail downgrade path (explore, empty quotes) — guaranteeing tiles
+  // rather than risking another validation bounce.
+  if (!buildFlowEmitted && !signal.aborted) {
+    retryCount = MAX_RETRIES;
+    try {
+      await generateText({
+        model: resolveModel(req),
+        tools: tools as Parameters<typeof generateText>[0]["tools"],
+        toolChoice: { type: "tool", toolName: "build_flow" },
+        abortSignal: signal,
+        system,
+        messages: [
+          ...toModelMessages(req.messages),
+          {
+            role: "user",
+            content:
+              "You didn't add anything to the canvas. Call build_flow now with 4-8 useful, real URLs for my request — do not reply in plain text.",
+          },
+        ],
+      });
+    } catch (err) {
+      // Forced call failed (bad key, network, model refusal) — surface it
+      // rather than ending on a silent empty canvas.
+      if (!buildFlowEmitted) {
+        yield { kind: "error", ...classifyError(err) };
+        return;
+      }
+    }
+    // Flush any node/flow_meta events the forced call enqueued.
+    while (queue.length > 0) {
+      const ev = queue.shift();
+      if (ev) yield ev;
+    }
+  }
+
   yield { kind: "done", runId };
 }

@@ -27,6 +27,9 @@ type ScriptEntry =
     };
 
 let nextScript: ScriptEntry[] = [];
+// When set, the mocked generateText (the forced build_flow retry) invokes
+// build_flow with this plan. null → the forced call is a no-op.
+let nextForcedPlan: unknown = null;
 
 vi.mock("@/lib/agent/tools", () => ({
   // The wrappers in session.ts call `.execute` and capture (url, text).
@@ -108,6 +111,29 @@ vi.mock("ai", async (orig) => {
           }
         }
         return { fullStream: gen() };
+      },
+    ),
+    generateText: vi.fn(
+      async (opts: {
+        tools?: Record<
+          string,
+          { execute?: (input: unknown, ctx: unknown) => Promise<unknown> }
+        >;
+      }) => {
+        // Models the forced build_flow retry: call build_flow with the
+        // scripted plan (if any).
+        const tool = opts.tools?.build_flow;
+        if (tool?.execute && nextForcedPlan) {
+          try {
+            await tool.execute(nextForcedPlan, {
+              toolCallId: "forced",
+              messages: [],
+            });
+          } catch {
+            // mirror production: a failing forced call is swallowed here
+          }
+        }
+        return { text: "" };
       },
     ),
   };
@@ -461,6 +487,106 @@ describe("runSession", () => {
     expect(meta?.downgraded).toBe(false);
     expect(events.filter((e) => e.kind === "node")).toHaveLength(2);
     expect(events.at(-1)?.kind).toBe("done");
+  });
+
+  it("forces a build_flow when the model finishes without calling one", async () => {
+    // Model replies in prose and never calls build_flow — the bug where the
+    // user sees a chatty 'done' but an empty canvas.
+    nextScript = [{ kind: "text", text: "Sure! Here's how you'd do that..." }];
+    nextForcedPlan = {
+      intent: "task",
+      title: "How to file taxes",
+      steps: [
+        {
+          id: "s1",
+          title: "Gather documents",
+          url: "https://www.irs.gov/",
+          instruction: "Collect your W-2s and 1099s.",
+          sourceQuote: "",
+          sourceUrl: "",
+          requires: [],
+          optional: false,
+          requiresLogin: false,
+        },
+        {
+          id: "s2",
+          title: "File online",
+          url: "https://www.irs.gov/filing",
+          instruction: "Use IRS Free File.",
+          sourceQuote: "",
+          sourceUrl: "",
+          requires: ["s1"],
+          optional: false,
+          requiresLogin: false,
+        },
+      ],
+    };
+    try {
+      const events = await collect(
+        runSession(baseReq, new AbortController().signal),
+      );
+      // The forced retry takes the can't-fail downgrade path → explore tiles.
+      const nodes = events.filter((e) => e.kind === "node");
+      expect(nodes).toHaveLength(2);
+      const meta = events.find((e) => e.kind === "flow_meta");
+      expect(meta?.intent).toBe("explore");
+      expect(meta?.downgraded).toBe(true);
+      expect(events.at(-1)?.kind).toBe("done");
+    } finally {
+      nextForcedPlan = null;
+    }
+  });
+
+  it("doesn't force a second build_flow when the model already authored one", async () => {
+    nextScript = [
+      {
+        kind: "tool",
+        name: "build_flow",
+        input: {
+          intent: "explore",
+          title: "News",
+          steps: [
+            {
+              id: "n1",
+              title: "NYT",
+              url: "https://nytimes.com",
+              instruction: "read",
+              sourceQuote: "",
+              sourceUrl: "",
+              requires: [],
+              optional: false,
+              requiresLogin: false,
+            },
+          ],
+        },
+      },
+    ];
+    // If the guard wrongly fired, this plan would double the node count.
+    nextForcedPlan = {
+      intent: "explore",
+      title: "extra",
+      steps: [
+        {
+          id: "x",
+          title: "x",
+          url: "https://x.com",
+          instruction: "x",
+          sourceQuote: "",
+          sourceUrl: "",
+          requires: [],
+          optional: false,
+          requiresLogin: false,
+        },
+      ],
+    };
+    try {
+      const events = await collect(
+        runSession(baseReq, new AbortController().signal),
+      );
+      expect(events.filter((e) => e.kind === "node")).toHaveLength(1);
+    } finally {
+      nextForcedPlan = null;
+    }
   });
 });
 
