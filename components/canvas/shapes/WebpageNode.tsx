@@ -101,7 +101,7 @@ export function WebpageNode({ shape }: WebpageNodeProps) {
         <button
           aria-label={done ? "Mark step as not done" : "Mark step as done"}
           aria-pressed={done}
-          className="flex size-5 shrink-0 items-center justify-center rounded-full border border-border text-background transition-colors hover:border-foreground data-[done=true]:border-foreground data-[done=true]:bg-foreground"
+          className="pointer-events-auto flex size-5 shrink-0 items-center justify-center rounded-full border border-border text-background transition-colors hover:border-foreground data-[done=true]:border-foreground data-[done=true]:bg-foreground"
           data-done={done}
           onClick={toggleDone}
           onPointerDown={(e) => e.stopPropagation()}
@@ -120,7 +120,7 @@ export function WebpageNode({ shape }: WebpageNodeProps) {
         </span>
         <button
           aria-label="Find related sites"
-          className="flex size-6 shrink-0 items-center justify-center rounded text-muted-foreground hover:bg-accent hover:text-foreground"
+          className="pointer-events-auto flex size-6 shrink-0 items-center justify-center rounded text-muted-foreground hover:bg-accent hover:text-foreground"
           onClick={expandRelated}
           onPointerDown={(e) => e.stopPropagation()}
           title="Find related sites"
@@ -130,7 +130,7 @@ export function WebpageNode({ shape }: WebpageNodeProps) {
         </button>
         <a
           aria-label="Open URL in new tab"
-          className="flex size-6 shrink-0 items-center justify-center rounded text-muted-foreground hover:bg-accent hover:text-foreground"
+          className="pointer-events-auto flex size-6 shrink-0 items-center justify-center rounded text-muted-foreground hover:bg-accent hover:text-foreground"
           href={url}
           onPointerDown={(e) => e.stopPropagation()}
           rel="noopener noreferrer"
@@ -281,7 +281,7 @@ function IframeBody({
 
   return (
     <iframe
-      className="h-full w-full border-0 bg-white"
+      className="pointer-events-auto h-full w-full border-0 bg-white"
       onLoad={() => {
         loadedRef.current = true;
       }}

@@ -84,6 +84,24 @@ describe("WebpageNode", () => {
     expect(openLinks.length).toBe(1);
   });
 
+  it("header controls opt into pointer events (tldraw shapes are pointer-events:none)", () => {
+    render(
+      React.createElement(WebpageNode, {
+        shape: makeShape({ mode: "link", title: "Hello" }),
+      }),
+    );
+    // Without pointer-events:auto these are unclickable inside the canvas.
+    expect(
+      screen.getByRole("button", { name: /find related sites/i }).className,
+    ).toMatch(/pointer-events-auto/);
+    expect(
+      screen.getByRole("link", { name: /open url in new tab/i }).className,
+    ).toMatch(/pointer-events-auto/);
+    expect(
+      screen.getByRole("button", { name: /mark step as/i }).className,
+    ).toMatch(/pointer-events-auto/);
+  });
+
   it("the find-related button dispatches a trail:expand event for this tile", () => {
     const events: CustomEvent[] = [];
     const handler = (e: Event) => events.push(e as CustomEvent);
